@@ -1,0 +1,164 @@
+{
+  "_comment": "칼빈(Future Ministry) 부서 배포 매니페스트 — 이 파일이 부서 위상의 정본이다. tools/setup.ps1 이 이 선언을 사용자의 ~/.cys/dept-catalog.json 에 병합하고, cys-dept create 로 부서를 생성한 뒤 기술자 리포를 클론하고 좌석을 수렴시킨다. ★설치 환경마다 dept 번호(dept-N)·소켓·계정 디렉터리는 cys-dept 가 새로 발급한다 — 이 파일에는 담지 않는다(이식성).",
+  "package": "future-ministry",
+  "display": "Future Ministry(칼빈)",
+  "version": "1.1.0",
+  "requires": {
+    "cys": ">=0.13.0",
+    "note": "자비스(cys) 터미널이 설치되어 있고 ~/.cys/pack/bin/cys-dept 가 존재해야 한다. 기술자 리포 클론에는 git 이 필요하다."
+  },
+  "accounts": {
+    "_comment": "account 키는 카탈로그 accounts 맵의 키다. 'owner'(기본 primary)를 쓰면 cys-dept 가 부서별 config dir(~/.cys/claude-<key>)를 자동 생성한다 — 별도 계정 포크가 필요 없어 배포에 안전하다.",
+    "owner": "$HOME/.cys/claude"
+  },
+  "departments": [
+    {
+      "key": "future-ministry",
+      "display": "Future Ministry(칼빈)",
+      "mission_key": "future-ministry",
+      "role": "dept-master",
+      "parent": null,
+      "tier": 0,
+      "account": "owner",
+      "cwd_template": "$HOME/Future-Ministry",
+      "mission_file": "missions/future-ministry.md",
+      "charter_file": "CHARTER.md",
+      "techs": []
+    },
+    {
+      "key": "fm-admin",
+      "display": "행정관리부",
+      "mission_key": "fm-admin",
+      "role": "dept-master",
+      "parent": "Future Ministry(칼빈)",
+      "tier": 1,
+      "account": "owner",
+      "cwd_template": "$HOME/Future-Ministry/행정관리부",
+      "mission_file": "missions/fm-admin.md",
+      "techs": [
+        {
+          "name": "Church-Admin",
+          "repo": "https://github.com/yijae78/Church-Admin-AgenticWorkflow.git",
+          "cwd_template": "$HOME/Future-Ministry/행정관리부/Church-Admin-AgenticWorkflow",
+          "visibility": "public",
+          "doc": "techs/Church-Admin.md",
+          "summary": "교회 행정 자동화"
+        },
+        {
+          "name": "frar",
+          "repo": "https://github.com/yijae78/frar.git",
+          "cwd_template": "$HOME/Future-Ministry/행정관리부/frar",
+          "visibility": "public",
+          "doc": "techs/frar.md",
+          "summary": "얼굴인식 기반 주일 출석 집계"
+        },
+        {
+          "name": "Office-Monitor",
+          "repo": "https://github.com/yijae78/Office-Monitor.git",
+          "cwd_template": "$HOME/Future-Ministry/행정관리부/Office-Monitor",
+          "visibility": "public",
+          "doc": "techs/Office-Monitor.md",
+          "summary": "사무실 출입·감시"
+        }
+      ]
+    },
+    {
+      "key": "fm-worship",
+      "display": "예배교육부",
+      "mission_key": "fm-worship",
+      "role": "dept-master",
+      "parent": "Future Ministry(칼빈)",
+      "tier": 1,
+      "account": "owner",
+      "cwd_template": "$HOME/Future-Ministry/예배교육부",
+      "mission_file": "missions/fm-worship.md",
+      "techs": [
+        {
+          "name": "worship-setlist-studio",
+          "repo": "https://github.com/yijae78/worship-setlist-studio.git",
+          "cwd_template": "$HOME/Future-Ministry/예배교육부/worship-setlist-studio",
+          "visibility": "public",
+          "doc": "techs/worship-setlist-studio.md",
+          "summary": "찬양 셋리스트 편성"
+        },
+        {
+          "name": "teacher-helper-package",
+          "repo": "https://github.com/yijae78/teacher-helper-package.git",
+          "cwd_template": "$HOME/Future-Ministry/예배교육부/teacher-helper-package",
+          "visibility": "public",
+          "doc": "techs/teacher-helper-package.md",
+          "summary": "교사 지원(한 레포 안의 스킬 3종 — 1개 유지가 노벨 권고, 분할 여부는 오너 결재 대기)"
+        },
+        {
+          "name": "godsaengbook-grace",
+          "repo": "https://github.com/yijae78/godsaengbook-grace.git",
+          "cwd_template": "$HOME/Future-Ministry/예배교육부/godsaengbook-grace",
+          "visibility": "public",
+          "doc": "techs/godsaengbook-grace.md",
+          "summary": "갓생북(양육·습관 형성)"
+        }
+      ]
+    },
+    {
+      "key": "fm-sermon",
+      "display": "설교기획부",
+      "mission_key": "fm-sermon",
+      "role": "dept-master",
+      "parent": "Future Ministry(칼빈)",
+      "tier": 1,
+      "account": "owner",
+      "cwd_template": "$HOME/Future-Ministry/설교기획부",
+      "mission_file": "missions/fm-sermon.md",
+      "techs": [
+        {
+          "name": "Sermon-Assistant",
+          "repo": "https://github.com/idoforgod/Sermon-Assistant-AgenticWorkflow.git",
+          "cwd_template": "$HOME/Future-Ministry/설교기획부/Sermon-Assistant-AgenticWorkflow",
+          "visibility": "public",
+          "doc": "techs/Sermon-Assistant.md",
+          "summary": "설교 작성 지원"
+        },
+        {
+          "name": "youth-sermon-app",
+          "repo": "https://github.com/yijae78/youth-sermon-app.git",
+          "cwd_template": "$HOME/Future-Ministry/설교기획부/youth-sermon-app",
+          "visibility": "public",
+          "doc": "techs/youth-sermon-app.md",
+          "summary": "청소년 설교"
+        },
+        {
+          "name": "kyle_cardnews",
+          "repo": "https://github.com/yijae78/kyle_cardnews.git",
+          "cwd_template": "$HOME/Future-Ministry/설교기획부/kyle_cardnews",
+          "visibility": "public",
+          "doc": "techs/kyle_cardnews.md",
+          "summary": "카드뉴스 (★재배치 검토 대상 — 오너 결재 대기)"
+        },
+        {
+          "name": "pray-news",
+          "repo": "https://github.com/yijae78/pray-news.git",
+          "cwd_template": "$HOME/Future-Ministry/설교기획부/pray-news",
+          "visibility": "public",
+          "doc": "techs/pray-news.md",
+          "summary": "기도 소식 (★재배치 검토 대상 — 오너 결재 대기)"
+        },
+        {
+          "name": "논문시뮬레이터",
+          "repo": "https://github.com/idoforgod/Dissertation-Simulator-AgenticWorkflow.git",
+          "cwd_template": "$HOME/Future-Ministry/설교기획부/Dissertation-Simulator-AgenticWorkflow",
+          "visibility": "public",
+          "doc": "techs/논문시뮬레이터.md",
+          "summary": "학위논문 작성 시뮬레이션"
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "departments": 4,
+    "root": 1,
+    "sub_departments": 3,
+    "technicians": 11,
+    "technicians_public": 11,
+    "technicians_private": 0
+  }
+}
