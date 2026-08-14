@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="660" viewBox="0 0 980 660" font-family="'Segoe UI','Malgun Gothic',sans-serif">
+  <!-- 칼빈(Future Ministry) 부서 — 설치 완료 시 자비스(cys) 터미널 실제 화면 구성.
+       실측 근거: cys-terminal-Nobel d2ca922 — WS_COLORS 팔레트 · .ws-kind 배지(D=부서색/P=#8a8a8a,
+       10px bold) · 기술자 행 들여쓰기 10+depth*16 · 부서 색 바 3px · 기술자 11px/부서 13px -->
+
+  <!-- 배경 -->
+  <rect width="980" height="660" fill="#0d1117"/>
+
+  <!-- 타이틀 바 -->
+  <rect width="980" height="34" fill="#010409"/>
+  <circle cx="20" cy="17" r="5.5" fill="#f85149"/>
+  <circle cx="38" cy="17" r="5.5" fill="#d29922"/>
+  <circle cx="56" cy="17" r="5.5" fill="#3fb950"/>
+  <text x="490" y="22" fill="#8b949e" font-size="12" text-anchor="middle">cys — 자비스 터미널 · Future Ministry(칼빈) 설치 후 화면</text>
+
+  <!-- ══════════ 왼쪽 사이드바 (부서 트리) ══════════ -->
+  <rect x="0" y="34" width="292" height="626" fill="#010409"/>
+  <line x1="292" y1="34" x2="292" y2="660" stroke="#21262d" stroke-width="1"/>
+
+  <!-- Nobel (base master — 절대 최상단) -->
+  <rect x="8" y="46" width="276" height="30" rx="8" fill="#161b22"/>
+  <rect x="8" y="46" width="3" height="30" fill="#39c5cf"/>
+  <text x="24" y="66" fill="#e6edf3" font-size="13" font-weight="600">Nobel</text>
+
+  <!-- 구분 -->
+  <text x="16" y="98" fill="#484f58" font-size="10" letter-spacing="1">DEPARTMENTS</text>
+
+  <!-- ── Future Ministry(칼빈) : 부서 데몬 D · 색 바 ── -->
+  <rect x="8" y="106" width="276" height="30" rx="8" fill="#1c2532"/>
+  <rect x="8" y="106" width="3" height="30" fill="#2f81f7"/>
+  <text x="20" y="126" fill="#8b949e" font-size="12">▾</text>
+  <text x="36" y="126" fill="#2f81f7" font-size="10" font-weight="700">D</text>
+  <text x="48" y="126" fill="#e6edf3" font-size="13" font-weight="600">Future Ministry(칼빈)</text>
+
+  <!-- ── 행정관리부 (depth1) ── -->
+  <rect x="8" y="140" width="276" height="28" rx="8" fill="#161b22"/>
+  <rect x="8" y="140" width="3" height="28" fill="#3fb950"/>
+  <text x="34" y="159" fill="#8b949e" font-size="12">▾</text>
+  <text x="50" y="159" fill="#3fb950" font-size="10" font-weight="700">D</text>
+  <text x="62" y="159" fill="#e6edf3" font-size="13">행정관리부</text>
+  <!-- 기술자 P행 (depth2 · 색바 없음 · 11px) -->
+  <text x="66" y="185" fill="#8a8a8a" font-size="10" font-weight="700">P</text>
+  <text x="80" y="185" fill="#c9d1d9" font-size="11">Church-Admin</text>
+  <text x="66" y="207" fill="#8a8a8a" font-size="10" font-weight="700">P</text>
+  <text x="80" y="207" fill="#c9d1d9" font-size="11">frar</text>
+  <text x="66" y="229" fill="#8a8a8a" font-size="10" font-weight="700">P</text>
+  <text x="80" y="229" fill="#c9d1d9" font-size="11">Office-Monitor</text>
+
+  <!-- ── 예배교육부 ── -->
+  <rect x="8" y="240" width="276" height="28" rx="8" fill="#161b22"/>
+  <rect x="8" y="240" width="3" height="28" fill="#d29922"/>
+  <text x="34" y="259" fill="#8b949e" font-size="12">▾</text>
+  <text x="50" y="259" fill="#d29922" font-size="10" font-weight="700">D</text>
+  <text x="62" y="259" fill="#e6edf3" font-size="13">예배교육부</text>
+  <text x="66" y="285" fill="#8a8a8a" font-size="10" font-weight="700">P</text>
+  <text x="80" y="285" fill="#c9d1d9" font-size="11">worship-setlist-studio</text>
+  <text x="66" y="307" fill="#8a8a8a" font-size="10" font-weight="700">P</text>
+  <text x="80" y="307" fill="#c9d1d9" font-size="11">teacher-helper-package</text>
+  <text x="66" y="329" fill="#8a8a8a" font-size="10" font-weight="700">P</text>
+  <text x="80" y="329" fill="#c9d1d9" font-size="11">godsaengbook-grace</text>
+
+  <!-- ── 설교기획부 ── -->
+  <rect x="8" y="340" width="276" height="28" rx="8" fill="#161b22"/>
+  <rect x="8" y="340" width="3" height="28" fill="#a371f7"/>
+  <text x="34" y="359" fill="#8b949e" font-size="12">▾</text>
+  <text x="50" y="359" fill="#a371f7" font-size="10" font-weight="700">D</text>
+  <text x="62" y="359" fill="#e6edf3" font-size="13">설교기획부</text>
+  <text x="66" y="385" fill="#8a8a8a" font-size="10" font-weight="700">P</text>
+  <text x="80" y="385" fill="#c9d1d9" font-size="11">Sermon-Assistant</text>
+  <text x="66" y="407" fill="#8a8a8a" font-size="10" font-weight="700">P</text>
+  <text x="80" y="407" fill="#c9d1d9" font-size="11">youth-sermon-app</text>
+  <text x="66" y="429" fill="#8a8a8a" font-size="10" font-weight="700">P</text>
+  <text x="80" y="429" fill="#c9d1d9" font-size="11">kyle_cardnews</text>
+  <text x="66" y="451" fill="#8a8a8a" font-size="10" font-weight="700">P</text>
+  <text x="80" y="451" fill="#c9d1d9" font-size="11">pray-news</text>
+  <text x="66" y="473" fill="#8a8a8a" font-size="10" font-weight="700">P</text>
+  <text x="80" y="473" fill="#c9d1d9" font-size="11">논문시뮬레이터</text>
+
+  <!-- 범례 -->
+  <rect x="8" y="560" width="276" height="88" rx="8" fill="#161b22" stroke="#21262d"/>
+  <text x="20" y="582" fill="#8b949e" font-size="11" font-weight="600">범례</text>
+  <text x="20" y="604" fill="#2f81f7" font-size="10" font-weight="700">D</text>
+  <text x="34" y="604" fill="#c9d1d9" font-size="11">데몬 노드 — 부서(독립 프로세스)</text>
+  <text x="20" y="624" fill="#8a8a8a" font-size="10" font-weight="700">P</text>
+  <text x="34" y="624" fill="#c9d1d9" font-size="11">패인 노드 — 기술자(부서 안의 좌석)</text>
+  <text x="20" y="642" fill="#6e7681" font-size="10">색 바 = 부서 고유색 · ▾ = 트리 펼침</text>
+
+  <!-- ══════════ 오른쪽 터미널 영역 ══════════ -->
+  <!-- 상단 pane: 부서장 -->
+  <rect x="304" y="46" width="664" height="286" rx="8" fill="#0d1117" stroke="#21262d"/>
+  <rect x="304" y="46" width="664" height="26" rx="8" fill="#161b22"/>
+  <text x="318" y="63" fill="#3fb950" font-size="10" font-weight="700">D</text>
+  <text x="332" y="63" fill="#e6edf3" font-size="12">행정관리부 — 부서장(claude)</text>
+  <text x="320" y="94" fill="#3fb950" font-size="12" font-family="Consolas,monospace">$ cys list</text>
+  <text x="320" y="114" fill="#c9d1d9" font-size="12" font-family="Consolas,monospace">surface:1  role=master   행정관리부</text>
+  <text x="320" y="134" fill="#c9d1d9" font-size="12" font-family="Consolas,monospace">surface:2  role=-        Church-Admin</text>
+  <text x="320" y="154" fill="#c9d1d9" font-size="12" font-family="Consolas,monospace">surface:3  role=-        frar</text>
+  <text x="320" y="174" fill="#c9d1d9" font-size="12" font-family="Consolas,monospace">surface:4  role=-        Office-Monitor</text>
+  <text x="320" y="204" fill="#8b949e" font-size="12" font-family="Consolas,monospace">부서 미션: missions/fm-admin.md · 헌장: CHARTER.md</text>
+  <text x="320" y="224" fill="#8b949e" font-size="12" font-family="Consolas,monospace">기술자 좌석 3/3 편성 완료 — setup.ps1 검증 통과</text>
+  <text x="320" y="254" fill="#3fb950" font-size="12" font-family="Consolas,monospace">$ █</text>
+
+  <!-- 하단 pane: 기술자 -->
+  <rect x="304" y="344" width="664" height="286" rx="8" fill="#0d1117" stroke="#21262d"/>
+  <rect x="304" y="344" width="664" height="26" rx="8" fill="#161b22"/>
+  <text x="318" y="361" fill="#8a8a8a" font-size="10" font-weight="700">P</text>
+  <text x="332" y="361" fill="#e6edf3" font-size="12">Church-Admin — ~/Future-Ministry/행정관리부/Church-Admin-AgenticWorkflow</text>
+  <text x="320" y="392" fill="#3fb950" font-size="12" font-family="Consolas,monospace">$ cd church-admin &amp;&amp; claude</text>
+  <text x="320" y="412" fill="#c9d1d9" font-size="12" font-family="Consolas,monospace">╭─ Claude Code ───────────────────────────────╮</text>
+  <text x="320" y="432" fill="#c9d1d9" font-size="12" font-family="Consolas,monospace">│  주보 만들어줘                              │</text>
+  <text x="320" y="452" fill="#c9d1d9" font-size="12" font-family="Consolas,monospace">│  → bulletin-generator 에이전트 가동         │</text>
+  <text x="320" y="472" fill="#c9d1d9" font-size="12" font-family="Consolas,monospace">│  → 검증 규칙 B1~B3 통과 · 주보 초안 완성    │</text>
+  <text x="320" y="492" fill="#c9d1d9" font-size="12" font-family="Consolas,monospace">╰─────────────────────────────────────────────╯</text>
+  <text x="320" y="522" fill="#8b949e" font-size="12" font-family="Consolas,monospace">기술자 = 부서 데몬 안의 패인(pane) 좌석.</text>
+  <text x="320" y="542" fill="#8b949e" font-size="12" font-family="Consolas,monospace">사이드바 P 행을 클릭하면 이 화면이 열립니다.</text>
+  <text x="320" y="572" fill="#8b949e" font-size="12" font-family="Consolas,monospace">사용법 전서: techs/Church-Admin.md (11종 각 1문서)</text>
+  <text x="320" y="602" fill="#3fb950" font-size="12" font-family="Consolas,monospace">$ █</text>
+</svg>

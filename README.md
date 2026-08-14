@@ -10,6 +10,11 @@ Future Ministry(칼빈)
 └─ 설교기획부   기술자 5   Sermon-Assistant · youth-sermon-app · kyle_cardnews · pray-news · 논문시뮬레이터
 ```
 
+설치가 끝나면 자비스 화면이 이렇게 구성된다 — 왼쪽 사이드바에 부서 트리(D)와 기술자(P),
+오른쪽에 부서장·기술자 pane이 열린다. (실제 UI 코드의 색·배지·들여쓰기 규격 그대로 그린 그림이다)
+
+![설치 후 화면 구성](docs/design-preview.svg)
+
 ## 먼저 필요한 것
 
 | | 확인 방법 |
