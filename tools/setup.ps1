@@ -19,8 +19,8 @@
     ⑤ 부서 생성      — cys-dept create <key>  (루트 → 하위 순. 카탈로그에 키가 있어야 하므로 반드시 ② 다음)
     ⑤b parent 백필   — depts.json 의 부서 엔트리에 parent 기록 (UI 부서 트리의 진실원)
     ⑥ 헌장 이식      — CHARTER.md → ~/.cys/pack-dept-<발급번호>/CHARTER.md
-    ⑦ 기술자 리포 클론 — 11개 (이미 있으면 skip)
-    ⑧ 기술자 좌석 수렴 — 카탈로그 techs 선언대로 pane 좌석 생성·정리
+    ⑦ 기술자 리포 클론 — 11개 (이미 있으면 skip · -Only 로 대상 축소 가능)
+    ⑧ 기술자 좌석 수렴 — 매니페스트 techs 선언대로 pane 좌석 생성·정리
     ⑨ 검증 보고      — 부서별 선언(techs) vs 실좌석(비exited) 정확 비교
 
   종료코드: 0 = 성공(드라이런 포함) · 1 = 실패 누적 있음(개별 실패는 끝까지 진행 후 목록 보고).
@@ -34,6 +34,16 @@
 .PARAMETER Dept
   대상 부서 키만 처리(future-ministry · fm-admin · fm-worship · fm-sermon). 생략 시 전부.
 
+.PARAMETER Only
+  기술자 id 콤마 목록만 클론한다 (예: -Only frar,office-monitor). 고를 수 있는 id 는 -ListTechs 로 본다.
+  ★좁아지는 것은 "무엇을 디스크에 내려받는가"뿐이다. 부서가 무엇을 선언하는가(② 카탈로그 병합)와
+    좌석 수렴(⑧)은 **전체 선언 그대로** 돈다 — 그래야 이미 설치돼 있던 다른 기술자 좌석이
+    '선언에 없는 좌석'으로 판정돼 제거되는 일이 없다.
+  없는 id 를 주면 아무것도 바꾸기 전에 즉시 중단한다(오타를 조용히 삼키지 않는다).
+
+.PARAMETER ListTechs
+  설치하지 않고 선택 가능한 기술자 목록(id·이름·부서·종류·방식·설치여부)만 출력하고 종료한다. 쓰기 0.
+
 .PARAMETER SkipClone
   기술자 리포 클론 단계를 건너뛴다(네트워크 없는 환경).
 
@@ -46,11 +56,20 @@
   .\setup.ps1                          # 전체 계획만 본다 (쓰기 0)
   .\setup.ps1 -Apply                   # 실제 설치
   .\setup.ps1 -Dept fm-admin -Apply    # 행정관리부만
+  .\setup.ps1 -ListTechs               # 고를 수 있는 기술자 id 목록 (쓰기 0)
+  .\setup.ps1 -Only frar,office-monitor         # 그 2종만 깔면 무슨 일이 생기는지 계획만
+  .\setup.ps1 -Only frar,office-monitor -Apply  # 그 2종만 실제 클론 (선언·좌석은 전체 유지)
 #>
 [CmdletBinding()]
 param(
   [switch]$Apply,
   [string]$Dept,
+  # ★[string] 이 아니라 [string[]] 인 이유(실측): PowerShell 인자모드에서 `-Only a,b` 의 콤마는
+  #   배열 생성자다. [string] 으로 받으면 바인딩 단계에서 "Cannot convert value to type
+  #   System.String" 으로 죽는다 — 즉 이 스크립트의 사용 예시 자체가 실행 불가가 된다.
+  #   [string[]] 로 받고 각 원소를 다시 ',' 로 쪼개면 `-Only a,b` 와 `-Only "a,b"` 둘 다 받는다.
+  [string[]]$Only,
+  [switch]$ListTechs,
   [switch]$SkipClone,
   [switch]$RemoveMaster,
   [string]$CysExe   = "$env:LOCALAPPDATA\cys\cys.exe"
@@ -130,6 +149,80 @@ function Expand-HomeTemplate([string]$t) {
   return ($t -replace '^\$HOME', [regex]::Escape($env:USERPROFILE).Replace('\\','\')) -replace '/', '\'
 }
 
+# ── 선택 필터 (-Only / -ListTechs) ────────────────────────────────────────────
+# ★적용 지점은 ⑦ 클론 한 곳뿐이다. ② 카탈로그 병합과 ⑧ 좌석 수렴의 $want 는 절대 건드리지 않는다.
+#   ⑧ 은 desired-vs-actual 수렴이라 $want 를 좁히는 순간 나머지 좌석이 '선언에 없는 좌석'으로
+#   판정돼 close-surface --reap 된다 — 유저는 "하나 더 깔았을 뿐인데 부서가 비었다"를 겪는다.
+#   -Only 는 "무엇을 내려받는가"만 좁히고 "부서가 무엇을 선언하는가"는 그대로 둔다.
+$script:OnlySet = $null
+if ($Only) {
+  # 원소마다 다시 ',' 분해 — `-Only a,b`(배열)와 `-Only "a,b"`(한 문자열) 양쪽을 같은 집합으로 만든다.
+  $script:OnlySet = @($Only | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
+}
+# id 는 manifest v1.2.0 부터의 정본 키다. 구버전 manifest(id 없음)와도 돌도록 name 으로 폴백한다.
+function Get-TechId($tech) {
+  if ($tech.id) { return [string]$tech.id } else { return [string]$tech.name }
+}
+function Test-TechSelected($tech) {
+  if (-not $script:OnlySet) { return $true }
+  return $script:OnlySet -contains (Get-TechId $tech).ToLower()
+}
+
+$allTechs = @($targets | ForEach-Object { $_.techs } | Where-Object { $_ })
+
+# 입력 검증 — 오타를 조용히 삼키지 않는다.
+# ★throw 인 이유: Fail() 은 누적만 하고 계속 진행하므로 -Apply 와 함께면 잘못된 입력인 채로
+#   ②~⑧ 이 이 PC 를 실제로 바꾼 뒤에야 exit 1 이 된다. 여기는 아직 쓰기 0 지점이다 —
+#   무엇도 바꾸기 전에 멈추는 것이 설치기의 안전 계약이다.
+if ($script:OnlySet) {
+  $known      = @($allTechs | ForEach-Object { Get-TechId $_ })
+  $knownLower = @($known | ForEach-Object { $_.ToLower() })
+  $bad        = @($script:OnlySet | Where-Object { $knownLower -notcontains $_ })
+  if ($bad.Count) {
+    throw ("-Only 에 없는 기술자 id: {0}`n선택 가능({1}종): {2}`n목록을 보려면: .\setup.ps1 -ListTechs" -f `
+           ($bad -join ', '), $known.Count, ($known -join ', '))
+  }
+}
+
+# -ListTechs — 고를 수 있는 것만 보여주고 즉시 종료. 쓰기 0.
+if ($ListTechs) {
+  Write-Host ""
+  Write-Host "  선택 가능한 기술자 — -Only 에 쓸 id" -ForegroundColor Cyan
+  $rows = @(foreach ($d in $targets) {
+    foreach ($t in @($d.techs)) {
+      $dest = Expand-HomeTemplate $t.cwd_template
+      [pscustomobject]@{
+        Id        = Get-TechId $t
+        Display   = if ($t.display) { $t.display } else { $t.name }
+        Dept      = $d.key
+        Type      = $t.type
+        Delivery  = $t.delivery
+        # hosted 는 내려받는 물건이 아니라 브라우저로 여는 서비스다 — 클론 여부를 설치 상태로
+        # 보고하면 거짓이 된다(결재 ④ 정신). 폴더가 있든 없든 '호스팅'으로 표기한다.
+        Installed = if ($t.delivery -eq 'hosted') { '호스팅' }
+                    elseif ($dest -and (Test-Path (Join-Path $dest '.git'))) { '설치됨' }
+                    else { '-' }
+      }
+    }
+  })
+  if ($rows.Count) {
+    # ★Format-Table 을 쓰지 않는다: 콘솔 폭이 좁으면 뒤쪽 열을 통째로 버려 id 만 남는다(실측).
+    #   이 표가 -ListTechs 의 요점이므로 고정폭으로 직접 그린다(⑨ 보고와 같은 방식).
+    $fmt = "  {0,-26} {1,-11} {2,-9} {3,-8} {4,-6} {5}"
+    Write-Host ($fmt -f 'id', '부서', '종류', '방식', '설치', '이름') -ForegroundColor DarkGray
+    Write-Host ($fmt -f ('-'*26), ('-'*11), ('-'*9), ('-'*8), ('-'*6), ('-'*20)) -ForegroundColor DarkGray
+    foreach ($r in $rows) {
+      $color = if ($r.Installed -eq '설치됨') { 'Green' } else { 'Gray' }
+      Write-Host ($fmt -f $r.Id, $r.Dept, $r.Type, $r.Delivery, $r.Installed, $r.Display) -ForegroundColor $color
+    }
+    Write-Host ""
+    Write-Host ("  예) .\setup.ps1 -Dept {0} -Only {1} -Apply" -f $rows[0].Dept, $rows[0].Id) -ForegroundColor DarkGray
+  } else {
+    Write-Host "  (대상 부서에 기술자 선언이 없다)" -ForegroundColor DarkGray
+  }
+  exit 0
+}
+
 # JSON 원자 저장 — 임시파일 + 원자 교체 · UTF-8(BOM 없음. PS5.1 Set-Content UTF8 은 BOM 을 붙여
 # cys-dept 의 python json.load 를 깨뜨린다 — 버전 무관 동작을 위해 .NET 으로 직접 쓴다).
 function Save-JsonAtomic([string]$path, [string]$json) {
@@ -175,7 +268,9 @@ foreach ($d in $targets) {
   }
   if ($d.parent) { $entry['parent'] = $d.parent }
   if ($d.techs -and @($d.techs).Count) {
-    # 카탈로그 techs 는 좌석 수렴기가 읽는 형식(name·repo·cwd)이다.
+    # 카탈로그 techs 는 name·repo·cwd 로 투영한다.
+    # ★이 투영을 되읽는 코드는 없다(write-only) — ⑧ 좌석 수렴과 ⑨ 검증은 둘 다
+    #   매니페스트의 $d.techs 를 읽는다. 정본은 manifest.json 이다(manifest.json 의 _sync_rule).
     $entry['techs'] = @($d.techs | ForEach-Object {
       [ordered]@{ name = $_.name; repo = $_.repo; cwd = $_.cwd_template }
     })
@@ -288,8 +383,11 @@ Step 7 '기술자 리포 클론'
 if ($SkipClone) {
   Write-Host "  (건너뜀 — -SkipClone)" -ForegroundColor DarkGray
 } else {
+  if ($script:OnlySet) {
+    Write-Host ("  (-Only 활성 — 선택한 {0}종만 클론한다. 부서 선언·좌석 수렴은 전체 유지)" -f $script:OnlySet.Count) -ForegroundColor DarkGray
+  }
   foreach ($d in $targets) {
-    foreach ($t in @($d.techs)) {
+    foreach ($t in @($d.techs | Where-Object { Test-TechSelected $_ })) {
       $dest = Expand-HomeTemplate $t.cwd_template
       if (Test-Path (Join-Path $dest '.git')) {
         Write-Host ("  = 이미 있음: {0}  (최신화하려면: git -C `"{0}`" pull)" -f $dest)
@@ -315,7 +413,8 @@ if ($SkipClone) {
 }
 
 # ── ⑧ 기술자 좌석 수렴 ────────────────────────────────────────────────────────
-# 카탈로그가 선언(desired), 여기가 수렴(reconcile)이다.
+# 매니페스트가 선언(desired), 여기가 수렴(reconcile)이다 (카탈로그가 아니다 — manifest.json 의 _sync_rule).
+# ★$want 는 -Only 로 좁히지 않는다. 좁히면 미선택 좌석이 '선언에 없는 좌석'이 돼 reap 된다.
 Step 8 '기술자 좌석 수렴'
 $socketOf = @{}
 if (Test-Path $DeptsMap) {
