@@ -415,5 +415,6 @@
     "technicians_public": 11,
     "technicians_private": 0
   },
-  "_schema_note": "tech 엔트리 확장(2026-08-24, P1-4): id·display·type·delivery·card·requires·skills·secrets·url·note 추가. type=물건의 성격, delivery=대시보드 버튼이 하는 일(install=[설치], hosted=[바로 열기(호스팅)]). secrets 는 키 '이름'만 담는다 — 값은 절대 담지 않는다."
+  "_schema_note": "tech 엔트리 확장(2026-08-24, P1-4): id·display·type·delivery·card·requires·skills·secrets·url·note 추가. type=물건의 성격, delivery=대시보드 버튼이 하는 일(install=[설치], hosted=[바로 열기(호스팅)]). secrets 는 키 '이름'만 담는다 — 값은 절대 담지 않는다.",
+  "_sync_rule": "동기화 규칙(2026-08-24, P1-5) — 이 파일이 부서 위상의 유일한 정본이고 ~/.cys/dept-catalog.json 은 tools/setup.ps1 ②단계가 덮어쓰는 파생 사본이다. 흐름은 manifest → catalog 단방향뿐이며 역류(catalog → manifest)와 카탈로그 손편집은 금지한다 — 카탈로그를 바꾸려면 이 파일을 고치고 setup.ps1 -Apply 를 다시 돌린다. (A)투영 범위: 카탈로그로 흐르는 것은 부서 4필드(display·account·mission_key·cwd, 있으면 parent)와 tech 3필드(name·repo·cwd)뿐이다. 위 확장 필드 10종은 대시보드가 이 파일에서 직접 읽으므로 카탈로그에 복제하지 않는다 — 복제하는 순간 정본이 둘이 된다. (B)덮어쓰기 경계: departments[key] 는 Add-Member -Force 로 통째 교체되므로 카탈로그에만 있던 필드는 소실된다(실행 전 .bak-타임스탬프 자동 백업). accounts 는 없는 키만 추가하므로 기존 계정 매핑은 보존된다. (C)조인 키: 카탈로그는 id 를 갖지 않으므로 두 파일을 잇는 유일한 키는 tech name 이다."
 }
