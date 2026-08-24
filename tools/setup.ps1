@@ -20,6 +20,7 @@
     ⑤b parent 백필   — depts.json 의 부서 엔트리에 parent 기록 (UI 부서 트리의 진실원)
     ⑥ 헌장 이식      — CHARTER.md → ~/.cys/pack-dept-<발급번호>/CHARTER.md
     ⑦ 기술자 리포 클론 — 11개 (이미 있으면 skip · -Only 로 대상 축소 가능)
+    ⑦b 의존성 점검   — 클론된 기술자의 런타임(node·python) 탐지 → 없으면 안내. 실제 설치는 -Deps 지정 시.
     ⑧ 기술자 좌석 수렴 — 매니페스트 techs 선언대로 pane 좌석 생성·정리
     ⑨ 검증 보고      — 부서별 선언(techs) vs 실좌석(비exited) 정확 비교
 
@@ -47,6 +48,14 @@
 .PARAMETER SkipClone
   기술자 리포 클론 단계를 건너뛴다(네트워크 없는 환경).
 
+.PARAMETER Deps
+  기술자 의존성(npm install · pip install …)을 **실제로 설치**한다. -Apply 와 함께 써야 실행된다.
+  ★기본(무지정) 동작은 설치가 아니라 **탐지→안내**다: 런타임이 있는지 확인하고, 무엇이 아직
+    안 깔렸는지 ⑨ 검증에 명시한다. 의존성 설치는 네트워크·수 분·수백MB 를 쓰는 질적으로 다른
+    행위라 좌석 하나 만드는 -Apply 와 동급으로 묶지 않는다.
+  ★실패를 경고로 삼키지 않는다 — -Deps 로 설치를 지시했는데 못 깔았으면 실패로 누적되어
+    종료코드가 1 이 된다(개별 실패는 끝까지 진행). "설치 성공"으로 오인하는 경로를 없앤다.
+
 .PARAMETER RemoveMaster
   ⚠위험. 하위 부의 role 좌석을 제거한다. close-surface 는 자손 프로세스 트리를 통째로 죽이는데,
   부서 cysd 가 그 좌석의 자손으로 기동돼 있으면 **데몬까지 죽는다**. 반드시 로스터 정리와
@@ -59,6 +68,8 @@
   .\setup.ps1 -ListTechs               # 고를 수 있는 기술자 id 목록 (쓰기 0)
   .\setup.ps1 -Only frar,office-monitor         # 그 2종만 깔면 무슨 일이 생기는지 계획만
   .\setup.ps1 -Only frar,office-monitor -Apply  # 그 2종만 실제 클론 (선언·좌석은 전체 유지)
+  .\setup.ps1 -Apply -Deps             # 설치 + 의존성까지 (네트워크·수 분 소요)
+  .\setup.ps1 -Only frar -Apply -Deps  # frar 만 클론하고 그 의존성만 설치
 #>
 [CmdletBinding()]
 param(
@@ -71,6 +82,7 @@ param(
   [string[]]$Only,
   [switch]$ListTechs,
   [switch]$SkipClone,
+  [switch]$Deps,
   [switch]$RemoveMaster,
   [string]$CysExe   = "$env:LOCALAPPDATA\cys\cys.exe"
 )
@@ -412,6 +424,124 @@ if ($SkipClone) {
   }
 }
 
+# ── ⑦b 의존성 점검 ───────────────────────────────────────────────────────────
+# ★기본은 "탐지 → 안내"다. 실제 설치는 -Deps 를 명시했을 때만 한다.
+# ★실패를 Warn 으로 삼키지 않는다. Fail() 은 누적만 하고 계속 진행하므로
+#   "한 기술자의 실패가 전체를 중단시키지 않는다"는 그대로고 종료코드만 비0 이 된다 —
+#   유저가 실패를 성공으로 오인하는 경로를 없애는 최소 조건이다(BRIEF 리스크 8).
+
+# 런타임 탐지 — PATH 조회만으로 판정하지 않고 실제로 --version 을 실행해 확인한다.
+# ★근거: Windows 는 스토어 앱 실행 별칭 python.exe 를 PATH 에 놓는다. Get-Command 는 성공하지만
+#   그 스텁은 스토어 창만 열고 끝난다. "찾았다"와 "쓸 수 있다"는 다른 사실이다.
+$script:RuntimeCache = @{}
+function Get-RuntimeInfo([string]$runtime) {
+  if (-not $runtime -or $runtime -eq 'none') {
+    return @{ Ok = $true; Name = 'none'; Version = '-'; Exe = $null; Hint = $null }
+  }
+  if ($script:RuntimeCache.ContainsKey($runtime)) { return $script:RuntimeCache[$runtime] }
+  $info = @{ Ok = $false; Name = $runtime; Version = $null; Exe = $null; Hint = $null }
+  switch ($runtime) {
+    'node' {
+      $info.Hint = 'Node.js LTS 설치 필요 — https://nodejs.org  (설치 후 새 터미널에서 node --version 확인)'
+      $c = Get-Command node -ErrorAction SilentlyContinue
+      if ($c) {
+        $v = (Invoke-Native { & $c.Source --version 2>&1 }) -join ' '
+        if ($v -match 'v?(\d+\.\d+\.\d+)') { $info.Ok = $true; $info.Version = $Matches[1]; $info.Exe = $c.Source }
+      }
+    }
+    'python' {
+      $info.Hint = 'Python 3 설치 필요 — https://www.python.org/downloads  (설치 시 "Add python.exe to PATH" 체크)'
+      foreach ($n in @('python','python3')) {
+        $c = Get-Command $n -ErrorAction SilentlyContinue
+        if (-not $c) { continue }
+        $v = (Invoke-Native { & $c.Source --version 2>&1 }) -join ' '
+        if ($v -match '(\d+\.\d+\.\d+)') { $info.Ok = $true; $info.Version = $Matches[1]; $info.Exe = $c.Source; break }
+      }
+    }
+    default { $info.Hint = "manifest 의 requires.runtime 값 '$runtime' 을 이 설치기는 모른다(node·python·none 만 안다)" }
+  }
+  $script:RuntimeCache[$runtime] = $info
+  return $info
+}
+
+# 선언된 install 문자열을 실행 가능한 (실행파일 + 인자배열) 로 분해한다.
+# ★Invoke-Expression 을 쓰지 않는 이유: 매니페스트 한 줄이 곧 임의 코드 실행이 되는 경로를
+#   만들지 않는다. 토큰으로 쪼개 인자 배열로만 넘긴다.
+# ★`pip` → `<탐지된 python> -m pip` 치환 (실측 근거): 이 PC 에서 `pip` 는
+#   AppData\Local\Programs\Python\Python313\Scripts\pip.exe 인데 `python` 은 cys 번들 런타임의
+#   python 3.12 다. 서로 다른 인터프리터라 바로 `pip` 를 부르면 앱이 쓰지 않는 파이썬에 깔린다
+#   ("설치했는데 실행하면 ModuleNotFoundError" 의 전형적 원인).
+function Resolve-InstallCommand([string]$cmd, $rt) {
+  $tok = @($cmd -split '\s+' | Where-Object { $_ })
+  if (-not $tok.Count) { return $null }
+  $head = $tok[0]
+  $rest = @($tok | Select-Object -Skip 1)
+  if ($head -eq 'pip' -or $head -eq 'pip3') {
+    if (-not $rt.Exe) { return $null }
+    return @{ Exe = $rt.Exe; Args = @('-m','pip') + $rest }
+  }
+  $c = Get-Command $head -ErrorAction SilentlyContinue
+  if (-not $c) { return $null }
+  return @{ Exe = $c.Source; Args = $rest }
+}
+
+# 멱등 가드 — 이미 깔린 흔적이 있으면 건너뛴다.
+# ★node 계열만 트리 안에 확실한 흔적(node_modules)을 남긴다. pip 계열은 남기지 않는다
+#   (실측: 기술자 11종 전량에 *.egg-info 0건 · .venv 0건). 거짓 마커를 만들어 skip 하면
+#   "깔았다고 표시되지만 실제로는 없는" 상태가 되므로 만들지 않는다. pip 는 재실행해도
+#   이미 충족된 패키지를 스스로 건너뛰므로 재실행이 안전하고 결과가 같다(= 멱등).
+function Test-DepsInstalled([string]$dest, [string]$cmd) {
+  if ($cmd -match '^\s*(npm|pnpm|yarn)\b') { return (Test-Path (Join-Path $dest 'node_modules')) }
+  return $false
+}
+
+Step '7b' '의존성 점검 — 런타임 탐지·안내'
+$script:DepsPending        = @()   # 클론됐고 설치가 필요한데 아직 안 깐 것 (⑨ 보고용)
+$script:DepsRuntimeMissing = @()   # 런타임이 없어 설치조차 불가한 것   (⑨ 보고용)
+if (-not $Deps) {
+  Write-Host "  (탐지·안내 모드 — 실제 설치는 -Apply -Deps)" -ForegroundColor DarkGray
+}
+foreach ($d in $targets) {
+  foreach ($t in @($d.techs | Where-Object { Test-TechSelected $_ })) {
+    $id  = Get-TechId $t
+    if ($t.delivery -eq 'hosted') { Write-Host ("  = {0}: 호스팅 — 설치 대상 아님" -f $id) -ForegroundColor DarkGray; continue }
+    $cmd = if ($t.requires) { [string]$t.requires.install } else { $null }
+    if (-not $cmd) { Write-Host ("  = {0}: 의존성 선언 없음" -f $id) -ForegroundColor DarkGray; continue }
+    $dest = Expand-HomeTemplate $t.cwd_template
+    if (-not (Test-Path $dest)) { Write-Host ("  = {0}: 아직 클론 안 됨 — 의존성 대상 아님" -f $id) -ForegroundColor DarkGray; continue }
+    if (Test-DepsInstalled $dest $cmd) { Write-Host ("  = {0}: 이미 설치됨(node_modules) — 건너뜀" -f $id) -ForegroundColor DarkGray; continue }
+
+    $rt = Get-RuntimeInfo ([string]$t.requires.runtime)
+    if (-not $rt.Ok) {
+      # 같은 사실이 모드에 따라 등급이 다르다: 안내만 받는 유저에겐 정보, 설치를 지시한 유저에겐 실패다.
+      $msg = "[{0}] 런타임 '{1}' 을 쓸 수 없다 — {2}" -f $id, $rt.Name, $rt.Hint
+      if ($Deps) { Fail $msg } else { Write-Host ("  ! {0}" -f $msg) -ForegroundColor Yellow }
+      $script:DepsRuntimeMissing += $id
+      continue
+    }
+    if (-not $Deps) {
+      Write-Host ("  · {0}: 미설치 — {1}   ({2} {3} 확인됨)" -f $id, $cmd, $rt.Name, $rt.Version)
+      $script:DepsPending += $id
+      continue
+    }
+
+    Act "$id : $cmd   (cwd=$dest)"
+    if (-not $Apply) { $script:DepsPending += $id; continue }
+    $rc = Resolve-InstallCommand $cmd $rt
+    if (-not $rc) { Fail ("[{0}] 설치 명령을 실행할 수 없다 — '{1}' 의 실행 파일을 PATH 에서 찾지 못했다" -f $id, $cmd); continue }
+    $exe = $rc.Exe; $argv = @($rc.Args)
+    Push-Location $dest
+    try {
+      $out = Invoke-Native { & $exe @argv 2>&1 }
+      if ($LASTEXITCODE -ne 0) {
+        Fail ("[{0}] 의존성 설치 실패 exit={1} : {2}" -f $id, $LASTEXITCODE, (@($out | Select-Object -Last 3) -join ' / '))
+      } else {
+        Write-Host ("  + {0} 의존성 설치 완료" -f $id) -ForegroundColor Green
+      }
+    } finally { Pop-Location }
+  }
+}
+
 # ── ⑧ 기술자 좌석 수렴 ────────────────────────────────────────────────────────
 # 매니페스트가 선언(desired), 여기가 수렴(reconcile)이다 (카탈로그가 아니다 — manifest.json 의 _sync_rule).
 # ★$want 는 -Only 로 좁히지 않는다. 좁히면 미선택 좌석이 '선언에 없는 좌석'이 돼 reap 된다.
@@ -550,6 +680,27 @@ if ($plan.Count) {
 
 # ── ⑨ 검증 보고 ───────────────────────────────────────────────────────────────
 Step 9 '검증'
+# ★런타임 존재 확인 (BRIEF 리스크 8) — 좌석이 전부 맞아도 런타임이 없으면 앱은 실행되지 않는다.
+#   이 줄이 없으면 유저는 "설치 완료"를 "실행 가능"으로 오독한다. 드라이런에서도 보여준다.
+$rtDeclared = @($targets | ForEach-Object { $_.techs } |
+                Where-Object { $_ -and $_.delivery -ne 'hosted' -and $_.requires -and $_.requires.runtime -and $_.requires.runtime -ne 'none' } |
+                ForEach-Object { [string]$_.requires.runtime } | Sort-Object -Unique)
+if ($rtDeclared.Count) {
+  Write-Host "  ── 런타임 ──"
+  foreach ($r in $rtDeclared) {
+    $i = Get-RuntimeInfo $r
+    if ($i.Ok) { Write-Host ("  {0,-8} 있음  {1,-10} {2}" -f $r, $i.Version, $i.Exe) -ForegroundColor Green }
+    else       { Write-Host ("  {0,-8} 없음  → {1}" -f $r, $i.Hint) -ForegroundColor Yellow }
+  }
+}
+if ($script:DepsRuntimeMissing.Count) {
+  Write-Host ("  ⚠ 런타임이 없어 실행 불가 예상 {0}종: {1}" -f $script:DepsRuntimeMissing.Count, ($script:DepsRuntimeMissing -join ', ')) -ForegroundColor Yellow
+}
+if ($script:DepsPending.Count) {
+  Write-Host ("  ⚠ 의존성 미설치 {0}종: {1}" -f $script:DepsPending.Count, ($script:DepsPending -join ', ')) -ForegroundColor Yellow
+  Write-Host  "     → 설치하려면 .\setup.ps1 -Apply -Deps   (네트워크·수 분 소요)" -ForegroundColor Yellow
+}
+
 if (-not $Apply) {
   Write-Host "  드라이런이다. 실제로 설치하려면 -Apply 를 붙여라." -ForegroundColor Yellow
 } else {
