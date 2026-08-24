@@ -70,6 +70,10 @@
   .\setup.ps1 -Only frar,office-monitor -Apply  # 그 2종만 실제 클론 (선언·좌석은 전체 유지)
   .\setup.ps1 -Apply -Deps             # 설치 + 의존성까지 (네트워크·수 분 소요)
   .\setup.ps1 -Only frar -Apply -Deps  # frar 만 클론하고 그 의존성만 설치
+
+  맥에서는 위 예시의 `.\setup.ps1` 자리에 `./tools/setup.sh` 를 쓴다 — 인자는 완전히 같다.
+  (setup.sh 는 재구현이 아니라 pwsh 로 이 파일을 실행하는 얇은 런처다. PowerShell 7 필요:
+   brew install --cask powershell)
 #>
 [CmdletBinding()]
 param(
