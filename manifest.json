@@ -2,7 +2,7 @@
   "_comment": "칼빈(Future Ministry) 부서 배포 매니페스트 — 이 파일이 부서 위상의 정본이다. tools/setup.ps1 이 이 선언을 사용자의 ~/.cys/dept-catalog.json 에 병합하고, cys-dept create 로 부서를 생성한 뒤 기술자 리포를 클론하고 좌석을 수렴시킨다. ★설치 환경마다 dept 번호(dept-N)·소켓·계정 디렉터리는 cys-dept 가 새로 발급한다 — 이 파일에는 담지 않는다(이식성).",
   "package": "future-ministry",
   "display": "Future Ministry(칼빈)",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "requires": {
     "cys": ">=0.13.0",
     "note": "자비스(cys) 터미널이 설치되어 있고 ~/.cys/pack/bin/cys-dept 가 존재해야 한다. 기술자 리포 클론에는 git 이 필요하다."
@@ -42,7 +42,30 @@
           "cwd_template": "$HOME/Future-Ministry/행정관리부/Church-Admin-AgenticWorkflow",
           "visibility": "public",
           "doc": "techs/Church-Admin.md",
-          "summary": "교회 행정 자동화"
+          "summary": "교회 행정 자동화",
+          "id": "church-admin",
+          "display": "Church-Admin",
+          "type": "skill",
+          "delivery": "install",
+          "card": {
+            "kind": "sample",
+            "src": "techs/church-admin/card.png",
+            "icon": null
+          },
+          "requires": {
+            "runtime": "python",
+            "cwd": "church-admin",
+            "install": "pip install -r church-admin/dashboard/requirements.txt",
+            "run": "streamlit run dashboard/app.py"
+          },
+          "skills": [
+            ".claude/skills/doctoral-writing",
+            ".claude/skills/workflow-generator",
+            "church-admin/.claude/skills/church-admin"
+          ],
+          "secrets": [],
+          "url": null,
+          "note": "스킬 루트가 둘(레포 루트·church-admin 하위)이다. .claude/skills/* 만 복사하면 핵심 스킬 church-admin 이 누락된다. run 은 cwd=church-admin 기준."
         },
         {
           "name": "frar",
@@ -50,7 +73,26 @@
           "cwd_template": "$HOME/Future-Ministry/행정관리부/frar",
           "visibility": "public",
           "doc": "techs/frar.md",
-          "summary": "얼굴인식 기반 주일 출석 집계"
+          "summary": "얼굴인식 기반 주일 출석 집계",
+          "id": "frar",
+          "display": "frar",
+          "type": "app",
+          "delivery": "install",
+          "card": {
+            "kind": "shot",
+            "src": "techs/frar/card.png",
+            "icon": null
+          },
+          "requires": {
+            "runtime": "python",
+            "cwd": null,
+            "install": "pip install -r requirements.txt",
+            "run": "streamlit run run.py"
+          },
+          "skills": [],
+          "secrets": [],
+          "url": null,
+          "note": "진입은 run.py(app/ 은 라이브러리). 127.0.0.1 강제 바인딩·기본 포트 8501."
         },
         {
           "name": "Office-Monitor",
@@ -58,7 +100,26 @@
           "cwd_template": "$HOME/Future-Ministry/행정관리부/Office-Monitor",
           "visibility": "public",
           "doc": "techs/Office-Monitor.md",
-          "summary": "사무실 출입·감시"
+          "summary": "사무실 출입·감시",
+          "id": "office-monitor",
+          "display": "Office-Monitor",
+          "type": "app",
+          "delivery": "install",
+          "card": {
+            "kind": "shot",
+            "src": "techs/office-monitor/card.png",
+            "icon": null
+          },
+          "requires": {
+            "runtime": "python",
+            "cwd": null,
+            "install": "pip install -r requirements.txt",
+            "run": "python main.py"
+          },
+          "skills": [],
+          "secrets": [],
+          "url": null,
+          "note": "launcher.vbs 는 진입점이 아니라 무창 실행 래퍼이며 python 절대경로가 하드코딩돼 있어 타 PC에서 깨진다. 설치 안내에서 main.py 직접 실행을 정본으로 삼는다."
         }
       ]
     },
@@ -79,7 +140,30 @@
           "cwd_template": "$HOME/Future-Ministry/예배교육부/worship-setlist-studio",
           "visibility": "public",
           "doc": "techs/worship-setlist-studio.md",
-          "summary": "찬양 셋리스트 편성"
+          "summary": "찬양 셋리스트 편성",
+          "id": "worship-setlist-studio",
+          "display": "worship-setlist-studio",
+          "type": "app",
+          "delivery": "install",
+          "card": {
+            "kind": "shot",
+            "src": "techs/worship-setlist-studio/card.png",
+            "icon": null
+          },
+          "requires": {
+            "runtime": "node",
+            "cwd": null,
+            "install": "npm install",
+            "run": "npm run dev"
+          },
+          "skills": [],
+          "secrets": [
+            "OPENAI_API_KEY",
+            "NEXT_PUBLIC_APP_NAME",
+            "MAX_ATTACHMENT_MB"
+          ],
+          "url": null,
+          "note": "package-lock.json 존재로 npm 확정. Node 20.9+ 요구. .env.example 에 OPENAI_API_KEY 가 있으나 소스에서 process.env 참조 0건 — 현재 미사용이라 없어도 기동된다."
         },
         {
           "name": "teacher-helper-package",
@@ -87,7 +171,30 @@
           "cwd_template": "$HOME/Future-Ministry/예배교육부/teacher-helper-package",
           "visibility": "public",
           "doc": "techs/teacher-helper-package.md",
-          "summary": "교사 지원(한 레포 안의 스킬 3종 — 1개 유지가 노벨 권고, 분할 여부는 오너 결재 대기)"
+          "summary": "교사 지원(한 레포 안의 스킬 3종 — 1개 유지가 노벨 권고, 분할 여부는 오너 결재 대기)",
+          "id": "teacher-helper-package",
+          "display": "teacher-helper-package",
+          "type": "skill",
+          "delivery": "install",
+          "card": {
+            "kind": "glyph",
+            "src": null,
+            "icon": "graduation-cap"
+          },
+          "requires": {
+            "runtime": "none",
+            "cwd": null,
+            "install": null,
+            "run": null
+          },
+          "skills": [
+            "skills/church-event-director",
+            "skills/grace-video-maker",
+            "skills/pbs-teacher-spirituality"
+          ],
+          "secrets": [],
+          "url": null,
+          "note": "패키지 매니페스트 0건 — 설치는 스킬 폴더 복사가 전부. README 는 '두 폴더'라 쓰였으나 실제 스킬은 3개다. workflows/book_to_video.py 는 ffmpeg·Pillow 를 요구하나 선언 파일이 없다(미확인)."
         },
         {
           "name": "godsaengbook-grace",
@@ -95,7 +202,31 @@
           "cwd_template": "$HOME/Future-Ministry/예배교육부/godsaengbook-grace",
           "visibility": "public",
           "doc": "techs/godsaengbook-grace.md",
-          "summary": "갓생북(양육·습관 형성)"
+          "summary": "갓생북(양육·습관 형성)",
+          "id": "godsaengbook-grace",
+          "display": "godsaengbook-grace",
+          "type": "app",
+          "delivery": "hosted",
+          "card": {
+            "kind": "sample",
+            "src": "techs/godsaengbook-grace/card.png",
+            "icon": null
+          },
+          "requires": {
+            "runtime": "node",
+            "cwd": null,
+            "install": null,
+            "run": null
+          },
+          "skills": [],
+          "secrets": [
+            "NEXT_PUBLIC_SUPABASE_URL",
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+            "SUPABASE_SERVICE_ROLE_KEY",
+            "CRON_SECRET"
+          ],
+          "url": "https://godsaengbook-grace.vercel.app",
+          "note": "hosted 이므로 클론·의존성 설치 대상이 아니다(노벨 결재 2026-08-24). URL 근거: app/layout.tsx:37 metadataBase, vercel.json:2 alias. vercel.json alias 에 오타로 보이는 gatsaengbook-grace.vercel.app 가 함께 등록돼 있으나 코드가 참조하는 정식 도메인은 godsaengbook- 쪽이다. .env.example 파일이 없어 필요한 키는 코드 실측으로 뽑았다."
         }
       ]
     },
@@ -116,7 +247,26 @@
           "cwd_template": "$HOME/Future-Ministry/설교기획부/Sermon-Assistant-AgenticWorkflow",
           "visibility": "public",
           "doc": "techs/Sermon-Assistant.md",
-          "summary": "설교 작성 지원"
+          "summary": "설교 작성 지원",
+          "id": "sermon-assistant",
+          "display": "Sermon-Assistant",
+          "type": "workflow",
+          "delivery": "install",
+          "card": {
+            "kind": "sample",
+            "src": "techs/sermon-assistant/card.png",
+            "icon": null
+          },
+          "requires": {
+            "runtime": "python",
+            "cwd": null,
+            "install": "pip install -e .",
+            "run": null
+          },
+          "skills": [],
+          "secrets": [],
+          "url": null,
+          "note": "run 명령 미확인 — pyproject.toml 에 [project.scripts] 가 없고 사실상 pytest 설정 파일이다. 실질은 프롬프트·문서형 워크플로우라 '실행'이 아니라 AI 가 지침을 읽는 방식으로 쓰인다."
         },
         {
           "name": "youth-sermon-app",
@@ -124,7 +274,44 @@
           "cwd_template": "$HOME/Future-Ministry/설교기획부/youth-sermon-app",
           "visibility": "public",
           "doc": "techs/youth-sermon-app.md",
-          "summary": "청소년 설교"
+          "summary": "청소년 설교",
+          "id": "youth-sermon-app",
+          "display": "youth-sermon-app",
+          "type": "app",
+          "delivery": "hosted",
+          "card": {
+            "kind": "glyph",
+            "src": null,
+            "icon": "smartphone"
+          },
+          "requires": {
+            "runtime": "node",
+            "cwd": null,
+            "install": null,
+            "run": null
+          },
+          "skills": [],
+          "secrets": [
+            "NODE_ENV",
+            "PORT",
+            "MONGODB_URI",
+            "REDIS_URL",
+            "JWT_ACCESS_SECRET",
+            "JWT_REFRESH_SECRET",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "R2_ACCOUNT_ID",
+            "R2_ACCESS_KEY_ID",
+            "R2_SECRET_ACCESS_KEY",
+            "R2_BUCKET_NAME",
+            "R2_PUBLIC_URL",
+            "GOOGLE_CLIENT_ID",
+            "GOOGLE_CLIENT_SECRET",
+            "SENTRY_DSN",
+            "CLIENT_URL"
+          ],
+          "url": null,
+          "note": "★배포 URL 미확인. vercel.json·README·homepage·CI 전부 부재하고 소스의 URL 은 전부 외부 API 다. 즉 배포된 흔적이 없다. hosted 분류 자체는 유효하나(Mongo·Redis·OAuth 필수라 로컬 설치로 완결 불가) '바로 열기(호스팅)' 버튼이 가리킬 곳이 없다 — 노벨 결재 대기. 부가: turbo.json 부재로 npm run dev(turbo run dev)가 현 상태로는 실패한다. 락파일도 0건."
         },
         {
           "name": "kyle_cardnews",
@@ -132,7 +319,33 @@
           "cwd_template": "$HOME/Future-Ministry/설교기획부/kyle_cardnews",
           "visibility": "public",
           "doc": "techs/kyle_cardnews.md",
-          "summary": "카드뉴스 (★재배치 검토 대상 — 오너 결재 대기)"
+          "summary": "카드뉴스 (★재배치 검토 대상 — 오너 결재 대기)",
+          "id": "kyle-cardnews",
+          "display": "kyle_cardnews",
+          "type": "skill",
+          "delivery": "install",
+          "card": {
+            "kind": "sample",
+            "src": "techs/kyle-cardnews/card.png",
+            "icon": null
+          },
+          "requires": {
+            "runtime": "node",
+            "cwd": null,
+            "install": "npm install",
+            "run": "npm run capture"
+          },
+          "skills": [
+            "skills/sns-cardnews",
+            "skills/sns-cardnews-build",
+            "skills/sns-cardnews-context",
+            "skills/sns-cardnews-copy",
+            "skills/sns-cardnews-design",
+            "skills/sns-cardnews-verify"
+          ],
+          "secrets": [],
+          "url": null,
+          "note": "스킬형이지만 유일하게 npm install 이 필요하다 — PNG 캡처가 puppeteer 에 의존한다(설치 시 Chromium 다운로드). 대표 스킬은 sns-cardnews 이고 나머지 5본은 하위 호출형이라 6본 일괄 복사가 필요하다. 락파일 없음."
         },
         {
           "name": "pray-news",
@@ -140,7 +353,26 @@
           "cwd_template": "$HOME/Future-Ministry/설교기획부/pray-news",
           "visibility": "public",
           "doc": "techs/pray-news.md",
-          "summary": "기도 소식 (★재배치 검토 대상 — 오너 결재 대기)"
+          "summary": "기도 소식 (★재배치 검토 대상 — 오너 결재 대기)",
+          "id": "pray-news",
+          "display": "pray-news",
+          "type": "app",
+          "delivery": "install",
+          "card": {
+            "kind": "shot",
+            "src": "techs/pray-news/card.png",
+            "icon": null
+          },
+          "requires": {
+            "runtime": "node",
+            "cwd": null,
+            "install": "npm install",
+            "run": "npm run dev"
+          },
+          "skills": [],
+          "secrets": [],
+          "url": null,
+          "note": "package-lock.json 존재로 npm 확정. Vite+React. API 키는 환경변수가 아니라 사용자 입력 방식으로 보인다(process.env 참조 0건)."
         },
         {
           "name": "논문시뮬레이터",
@@ -148,7 +380,29 @@
           "cwd_template": "$HOME/Future-Ministry/설교기획부/Dissertation-Simulator-AgenticWorkflow",
           "visibility": "public",
           "doc": "techs/논문시뮬레이터.md",
-          "summary": "학위논문 작성 시뮬레이션"
+          "summary": "학위논문 작성 시뮬레이션",
+          "id": "dissertation-simulator",
+          "display": "논문시뮬레이터",
+          "type": "workflow",
+          "delivery": "install",
+          "card": {
+            "kind": "glyph",
+            "src": null,
+            "icon": "microscope"
+          },
+          "requires": {
+            "runtime": "python",
+            "cwd": null,
+            "install": "pip install -e .",
+            "run": null
+          },
+          "skills": [],
+          "secrets": [
+            "CROSSREF_EMAIL",
+            "OPENALEX_API_KEY"
+          ],
+          "url": null,
+          "note": "run 명령 미확인([project.scripts] 없음, academic_apis/ 는 라이브러리). 키 선언 파일 이름이 .env.example 이 아니라 .env.template 이다. Python 3.12+ 요구."
         }
       ]
     }
@@ -160,5 +414,6 @@
     "technicians": 11,
     "technicians_public": 11,
     "technicians_private": 0
-  }
+  },
+  "_schema_note": "tech 엔트리 확장(2026-08-24, P1-4): id·display·type·delivery·card·requires·skills·secrets·url·note 추가. type=물건의 성격, delivery=대시보드 버튼이 하는 일(install=[설치], hosted=[바로 열기(호스팅)]). secrets 는 키 '이름'만 담는다 — 값은 절대 담지 않는다."
 }
