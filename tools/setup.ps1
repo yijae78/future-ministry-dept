@@ -84,7 +84,10 @@ param(
   [switch]$SkipClone,
   [switch]$Deps,
   [switch]$RemoveMaster,
-  [string]$CysExe   = "$env:LOCALAPPDATA\cys\cys.exe"
+  # ★기본값을 여기서 정하지 않는 이유: OS 별 경로 해석은 $IsWindows 판정 이후여야 하는데
+  #   param 기본값은 본문보다 먼저 평가된다. 빈 값이면 본문이 OS 에 맞게 채운다.
+  #   -CysExe 로 직접 준 값은 그대로 존중된다.
+  [string]$CysExe   = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -92,13 +95,15 @@ $ErrorActionPreference = 'Stop'
 #   미전달 시 $HOME/.cys 고정 경로만 읽는다(cys-dept:31,635-636). CysHome 을 파라미터로 받으면
 #   병합은 A 경로에 쓰고 create 는 B 경로를 읽는 분기 결함이 되므로 기본 경로로 고정한다.
 #   WorkRoot 파라미터도 제거 — 작업 폴더는 매니페스트 cwd_template + Expand-HomeTemplate 로만 결정된다.
-$CysHome  = Join-Path $env:USERPROFILE '.cys'
+$CysHome  = Join-Path $HOME '.cys'
 $PkgDir   = Split-Path -Parent $PSScriptRoot           # .../departments/future-ministry
 $Manifest = Join-Path $PkgDir 'manifest.json'
 $Catalog  = Join-Path $CysHome 'dept-catalog.json'
 $DeptsMap = Join-Path $CysHome 'depts.json'
 $MissDir  = Join-Path $CysHome 'dept-missions'
-$DeptTool = Join-Path $CysHome 'pack\bin\cys-dept'
+# ★'pack\bin\cys-dept' 를 한 덩어리로 Join-Path 하면 맥에서 '.../.cys/pack\bin\cys-dept' 가 된다
+#   (구분자가 치환되지 않는다). 조각으로 나눠 이어붙여야 OS 구분자가 적용된다.
+$DeptTool = Join-Path (Join-Path (Join-Path $CysHome 'pack') 'bin') 'cys-dept'
 
 $script:Warnings = @()
 $script:Failures = @()
@@ -111,6 +116,48 @@ function Act($m) { if ($Apply) { Write-Host "  · $m" } else { Write-Host "  (�
 function Invoke-Native([scriptblock]$sb) {
   $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
   try { & $sb } finally { $ErrorActionPreference = $eap }
+}
+
+# ── OS 판별 (win / mac-arm64 / mac-x64) ──────────────────────────────────────
+# ★$IsWindows 를 그대로 쓰면 안 된다 (실측 근거): 이 자동변수는 pwsh 6+ 에만 있고
+#   Windows PowerShell 5.1 에는 없다($null). 그래서 `if ($IsWindows)` 는 5.1 에서 **거짓**이 되어
+#   맥 분기로 빠진다 — 설계 문구대로 짜면 이 스크립트가 지금까지 정상 동작하던 바로 그 환경이 깨진다.
+#   5.1 은 Windows 에만 존재하므로 "$IsWindows 가 없으면 곧 Windows"가 성립한다.
+$script:IsWin = if ($null -eq $IsWindows) { $true }  else { [bool]$IsWindows }
+$script:IsMac = if ($null -eq $IsMacOS)   { $false } else { [bool]$IsMacOS }
+if ($script:IsWin) {
+  $osKey = 'win'
+} elseif ($script:IsMac) {
+  $arch = ''
+  try { $arch = ((Invoke-Native { & uname -m 2>&1 }) -join '').Trim() } catch { $arch = '' }
+  $osKey = if ($arch -eq 'arm64') { 'mac-arm64' } else { 'mac-x64' }
+} else {
+  throw "이 설치기는 win / mac-arm64 / mac-x64 만 지원한다 (감지된 플랫폼은 그 셋이 아니다)."
+}
+
+# 사용 안내문에 넣을 자기 호출 표기 — Windows 는 ".\", 그 외는 "./" 라야 실제로 실행된다.
+$script:SelfCmd = if ($script:IsWin) { '.\setup.ps1' } else { './setup.ps1' }
+
+# cys 실행체 경로 해석 — 파라미터로 직접 준 값이 있으면 그것이 우선이다.
+# ★맥 실제 설치 경로는 [미확인]이다(dmg 설치본 미검증). 그래서 경로를 단정하지 않고
+#   PATH 조회를 1순위로 두고, 실패하면 후보 경로를 순서대로 본다. 전부 실패하면 ① 이
+#   기존과 똑같은 메시지로 멈춘다 — 없는 경로를 있는 것처럼 지어내지 않는다.
+if (-not $CysExe) {
+  if ($script:IsWin) {
+    $CysExe = Join-Path $env:LOCALAPPDATA 'cys\cys.exe'
+  } else {
+    $onPath = Get-Command cys -ErrorAction SilentlyContinue
+    if ($onPath) {
+      $CysExe = $onPath.Source
+    } else {
+      $cand = @('/Applications/cys.app/Contents/MacOS/cys',
+                (Join-Path $HOME 'Applications/cys.app/Contents/MacOS/cys'),
+                '/usr/local/bin/cys',
+                '/opt/homebrew/bin/cys')
+      $found = @($cand | Where-Object { Test-Path $_ })
+      $CysExe = if ($found.Count) { $found[0] } else { $cand[0] }
+    }
+  }
 }
 
 # ── 호출자 env 보호: 원값 보관 → finally 에서 복원 (CYS_NO_AUTOSTART·CYS_SOCKET) ──
@@ -131,7 +178,11 @@ if (-not (Test-Path $DeptTool)) { throw "cys-dept 를 찾을 수 없다: $DeptTo
 # ★`?.Source`(PS7 전용 null-conditional)는 PS 5.1 에서 파싱 즉시 실패 — 5.1 호환 문법으로 분리.
 $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
 $bash = if ($bashCmd) { $bashCmd.Source } else { $null }
-if (-not $bash) { throw "bash 를 찾을 수 없다. Git for Windows 를 설치하라 — cys-dept 는 bash 스크립트다." }
+if (-not $bash) {
+  # 맥은 bash 가 기본 탑재라 이 분기는 사실상 Windows 전용이다. 안내문만 OS 에 맞춘다.
+  if ($script:IsWin) { throw "bash 를 찾을 수 없다. Git for Windows 를 설치하라 — cys-dept 는 bash 스크립트다." }
+  else               { throw "bash 를 찾을 수 없다(PATH 확인 필요) — cys-dept 는 bash 스크립트다." }
+}
 $gitCmd = Get-Command git -ErrorAction SilentlyContinue
 $git = if ($gitCmd) { $gitCmd.Source } else { $null }
 if (-not $git -and -not $SkipClone) { Warn "git 이 없다 — 기술자 리포 클론을 건너뛴다."; $SkipClone = $true }
@@ -149,6 +200,7 @@ if ($cysVer -lt [version]'0.13.0') { throw "cys $cysVer 는 요구 버전(>=0.13
 Write-Host "  cys      : $CysExe ($cysVer)"
 Write-Host "  cys-dept : $DeptTool"
 Write-Host "  bash     : $bash"
+Write-Host "  OS       : $osKey"
 
 $mf = Get-Content $Manifest -Raw -Encoding UTF8 | ConvertFrom-Json
 $targets = @($mf.departments | Where-Object { -not $Dept -or $_.key -eq $Dept })
@@ -158,7 +210,11 @@ Write-Host ("  대상 부서 : {0}" -f (($targets | ForEach-Object { $_.key }) -
 # HOME 템플릿 전개 — 매니페스트의 "$HOME/..." 를 이 PC 경로로 바꾼다.
 function Expand-HomeTemplate([string]$t) {
   if (-not $t) { return $null }
-  return ($t -replace '^\$HOME', [regex]::Escape($env:USERPROFILE).Replace('\\','\')) -replace '/', '\'
+  # ★역슬래시 변환은 Windows 에서만 한다. 맥/리눅스에서 '/'→'\' 를 하면 경로가 파괴된다.
+  #   $HOME 은 pwsh 뿐 아니라 Windows PowerShell 5.1 에도 있는 자동변수라 OS 분기 없이 그대로 쓴다.
+  $expanded = $t -replace '^\$HOME', [regex]::Escape($HOME).Replace('\\','\')
+  if ($script:IsWin) { return ($expanded -replace '/', '\') }
+  return $expanded
 }
 
 # ── 선택 필터 (-Only / -ListTechs) ────────────────────────────────────────────
@@ -191,8 +247,8 @@ if ($script:OnlySet) {
   $knownLower = @($known | ForEach-Object { $_.ToLower() })
   $bad        = @($script:OnlySet | Where-Object { $knownLower -notcontains $_ })
   if ($bad.Count) {
-    throw ("-Only 에 없는 기술자 id: {0}`n선택 가능({1}종): {2}`n목록을 보려면: .\setup.ps1 -ListTechs" -f `
-           ($bad -join ', '), $known.Count, ($known -join ', '))
+    throw ("-Only 에 없는 기술자 id: {0}`n선택 가능({1}종): {2}`n목록을 보려면: {3} -ListTechs" -f `
+           ($bad -join ', '), $known.Count, ($known -join ', '), $script:SelfCmd)
   }
 }
 
@@ -228,7 +284,7 @@ if ($ListTechs) {
       Write-Host ($fmt -f $r.Id, $r.Dept, $r.Type, $r.Delivery, $r.Installed, $r.Display) -ForegroundColor $color
     }
     Write-Host ""
-    Write-Host ("  예) .\setup.ps1 -Dept {0} -Only {1} -Apply" -f $rows[0].Dept, $rows[0].Id) -ForegroundColor DarkGray
+    Write-Host ("  예) {0} -Dept {1} -Only {2} -Apply" -f $script:SelfCmd, $rows[0].Dept, $rows[0].Id) -ForegroundColor DarkGray
   } else {
     Write-Host "  (대상 부서에 기술자 선언이 없다)" -ForegroundColor DarkGray
   }
@@ -303,7 +359,10 @@ Step 3 '미션 파일 이식 → ~/.cys/dept-missions/'
 if ($Apply -and -not (Test-Path $MissDir)) { New-Item -ItemType Directory -Force $MissDir | Out-Null }
 foreach ($d in $targets) {
   if (-not $d.mission_file) { continue }
-  $src = Join-Path $PkgDir ($d.mission_file -replace '/','\')
+  # ★역슬래시 치환은 Windows 에서만 한다. 맥에서 치환하면 'missions\x.md' 가 통짜 파일명이 되어
+  #   Test-Path 가 실패하고 미션이 Warn 만 남긴 채 조용히 누락된다.
+  $rel = if ($script:IsWin) { $d.mission_file -replace '/','\' } else { $d.mission_file }
+  $src = Join-Path $PkgDir $rel
   if (-not (Test-Path $src)) { Warn "미션 파일 없음: $src"; continue }
   $dst = Join-Path $MissDir "$($d.mission_key).md"
   Act "$($d.mission_key).md → $dst"
@@ -384,7 +443,7 @@ if ((Test-Path $charterSrc) -and ($targets.key -contains $rootKey)) {
     $packDir = Join-Path $CysHome "pack-dept-$($deptIdOf[$rootKey])"
     New-Item -ItemType Directory -Force $packDir | Out-Null
     Copy-Item $charterSrc (Join-Path $packDir 'CHARTER.md') -Force
-    Write-Host "  → $packDir\CHARTER.md" -ForegroundColor Green
+    Write-Host "  → $(Join-Path $packDir 'CHARTER.md')" -ForegroundColor Green
   } else {
     Act "CHARTER.md → ~/.cys/pack-dept-<발급번호>/CHARTER.md"
   }
@@ -642,7 +701,7 @@ if ($plan.Count) {
         $env:CYS_SOCKET = $p.Socket
         switch ($p.Act) {
           'create' {
-            $cwd = if ($p.Cwd -and (Test-Path $p.Cwd)) { $p.Cwd } else { $env:USERPROFILE }
+            $cwd = if ($p.Cwd -and (Test-Path $p.Cwd)) { $p.Cwd } else { $HOME }
             $r = Invoke-Native { & $CysExe new-surface --title $p.Title --cwd $cwd 2>&1 }
             if ($LASTEXITCODE -ne 0) {
               Fail ("[{0}] 좌석 생성 실패 '{1}' exit={2} : {3}" -f $p.Dept, $p.Title, $LASTEXITCODE, ($r -join ' '))
@@ -698,7 +757,7 @@ if ($script:DepsRuntimeMissing.Count) {
 }
 if ($script:DepsPending.Count) {
   Write-Host ("  ⚠ 의존성 미설치 {0}종: {1}" -f $script:DepsPending.Count, ($script:DepsPending -join ', ')) -ForegroundColor Yellow
-  Write-Host  "     → 설치하려면 .\setup.ps1 -Apply -Deps   (네트워크·수 분 소요)" -ForegroundColor Yellow
+  Write-Host  ("     → 설치하려면 {0} -Apply -Deps   (네트워크·수 분 소요)" -f $script:SelfCmd) -ForegroundColor Yellow
 }
 
 if (-not $Apply) {
