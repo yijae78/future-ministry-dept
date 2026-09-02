@@ -35,7 +35,7 @@ function Bail([string]$why, [string]$fix, [int]$code) {
     Say '해결이 어려우면 그 파일 하나만 제작자에게 보내 주세요.' 'Yellow'
   } catch {}
   Say ''
-  Read-Host '엔터를 누르면 창이 닫힙니다'
+  try { Read-Host '엔터를 누르면 창이 닫힙니다' | Out-Null } catch {}
   exit $code
 }
 
@@ -168,5 +168,5 @@ if ($setupExit -eq 0 -and $doctorExit -eq 0) {
   } catch {}
 }
 Say ''
-Read-Host '엔터를 누르면 창이 닫힙니다'
+try { Read-Host '엔터를 누르면 창이 닫힙니다' | Out-Null } catch {}
 exit $(if ($setupExit -eq 0 -and $doctorExit -eq 0) { 0 } else { 1 })

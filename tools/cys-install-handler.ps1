@@ -33,7 +33,7 @@ function Fail([string]$msg, [string]$fix) {
     Write-Host '기록을 바탕화면의 「퓨처미니스트리-설치로그.txt」 에 남겼습니다 — 해결이 어려우면 이 파일만 보내 주세요.' -ForegroundColor Yellow
   } catch {}
   Write-Host ''
-  Read-Host '엔터를 누르면 창이 닫힙니다'
+  try { Read-Host '엔터를 누르면 창이 닫힙니다' | Out-Null } catch {}
   exit 1
 }
 
@@ -76,7 +76,9 @@ if ($git -and (Test-Path (Join-Path $PkgRoot '.git'))) {
 Get-ChildItem Env: | Where-Object { $_.Name -like 'CYS_*' } |
   ForEach-Object { Remove-Item "Env:$($_.Name)" -ErrorAction SilentlyContinue }
 
-$setupArgs = @('-Apply')
+# 시험 훅 — 검증 하네스 전용(FM_NO_APPLY=1): 실제 적용 없이 관통만 잰다.
+$noApply = ($env:FM_NO_APPLY -eq '1')
+$setupArgs = @(); if (-not $noApply) { $setupArgs += '-Apply' }
 if ($kind -eq 'tech') { $setupArgs += @('-Only', $key) }
 elseif ($key -ne 'future-ministry') { $setupArgs += @('-Dept', $key) }
 
@@ -86,7 +88,8 @@ $code = $LASTEXITCODE
 
 # ── 4. 자가 진단 ────────────────────────────────────────
 $doctorExit = 0
-if (Test-Path $Doctor) {
+if ($noApply) { $Doctor = '' }   # 시험 모드 — 적용을 안 했으니 진단 판정도 걸지 않는다
+if ($Doctor -and (Test-Path $Doctor)) {
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Doctor
   $doctorExit = $LASTEXITCODE
 }
@@ -103,5 +106,5 @@ if ($code -eq 0 -and $doctorExit -eq 0) {
     Write-Host '기록을 바탕화면의 「퓨처미니스트리-설치로그.txt」 에 남겼습니다 — 해결이 어려우면 이 파일만 보내 주세요.' -ForegroundColor Yellow
   } catch {}
 }
-Read-Host '엔터를 누르면 창이 닫힙니다'
+try { Read-Host '엔터를 누르면 창이 닫힙니다' | Out-Null } catch {}
 exit $(if ($code -eq 0 -and $doctorExit -eq 0) { 0 } else { 1 })
