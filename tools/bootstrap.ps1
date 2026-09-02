@@ -89,7 +89,7 @@ if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force $parent | Ou
 $ErrorActionPreference = 'Continue'
 if (Test-Path (Join-Path $PkgDir '.git')) {
   Say '이미 받아 둔 패키지가 있어 최신으로 맞춥니다.'
-  & git -C $PkgDir pull --ff-only 2>&1 | Out-Host
+  & git -C $PkgDir pull --ff-only 2>&1 | ForEach-Object { "$_" } | Out-Host
   if ($LASTEXITCODE -ne 0) { Say '최신화는 건너뜁니다(네트워크 없음?) — 받아 둔 판으로 진행합니다.' 'Yellow' }
 } else {
   if (Test-Path $PkgDir) {
@@ -97,7 +97,7 @@ if (Test-Path (Join-Path $PkgDir '.git')) {
     Say '지난번에 받다 만 폴더가 있어 옆으로 치우고 새로 받습니다.' 'Yellow'
     Move-Item $PkgDir $bak -Force
   }
-  & git clone $RepoUrl $PkgDir 2>&1 | Out-Host
+  & git clone $RepoUrl $PkgDir 2>&1 | ForEach-Object { "$_" } | Out-Host
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $PkgDir '.git'))) {
     Bail '패키지를 받아오지 못했습니다.' '인터넷 연결을 확인하시고, 이 파일을 다시 두 번 눌러 주세요.' 4
   }

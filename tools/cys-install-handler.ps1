@@ -67,7 +67,7 @@ if ($git -and (Test-Path (Join-Path $PkgRoot '.git'))) {
   Write-Host '[준비] 패키지를 최신으로 맞춥니다…'
   # ⚠git 정상 메시지가 stderr 로 온다 — Stop+2>&1 치명 예외 지뢰라 이 구간만 Continue(실측 2026-09-02).
   $ErrorActionPreference = 'Continue'
-  & git -C $PkgRoot pull --ff-only 2>&1 | Out-Host
+  & git -C $PkgRoot pull --ff-only 2>&1 | ForEach-Object { "$_" } | Out-Host
   if ($LASTEXITCODE -ne 0) { Write-Host '[준비] 최신화는 건너뜁니다(네트워크 없음?) — 받아 둔 판으로 진행합니다.' -ForegroundColor Yellow }
   $ErrorActionPreference = 'Stop'
 }
