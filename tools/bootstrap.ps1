@@ -57,8 +57,11 @@ if (-not $cys) {
 Say ("자비스 확인: {0}" -f $cys.Source) 'Green'
 
 # 신규 기계 구멍(2026-09-02 행렬 실측) — 앱만 깔고 운영 틀(pack)이 없으면 setup 이 1단계에서 죽는다.
+# ⚠cys init-pack 은 환경변수 HOME 을 무시하고 실제 사용자 홈에 쓴다(실측) — 시험 모드에선 건너뛴다.
 $deptTool = Join-Path $HOME '.cys\pack\bin\cys-dept'
-if (-not (Test-Path $deptTool)) {
+if ($NoApply -and -not (Test-Path $deptTool)) {
+  Say '시험 모드 — 운영 틀(pack) 설치 단계는 건너뜁니다.' 'Yellow'
+} elseif (-not (Test-Path $deptTool)) {
   Say '자비스 운영 틀(pack)이 아직 없어 먼저 설치합니다…' 'Yellow'
   $ErrorActionPreference = 'Continue'
   & cys init-pack 2>&1 | ForEach-Object { "$_" } | Out-Host
