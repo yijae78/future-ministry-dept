@@ -56,6 +56,20 @@ if (-not $cys) {
 }
 Say ("자비스 확인: {0}" -f $cys.Source) 'Green'
 
+# 신규 기계 구멍(2026-09-02 행렬 실측) — 앱만 깔고 운영 틀(pack)이 없으면 setup 이 1단계에서 죽는다.
+$deptTool = Join-Path $HOME '.cys\pack\bin\cys-dept'
+if (-not (Test-Path $deptTool)) {
+  Say '자비스 운영 틀(pack)이 아직 없어 먼저 설치합니다…' 'Yellow'
+  $ErrorActionPreference = 'Continue'
+  & cys init-pack 2>&1 | ForEach-Object { "$_" } | Out-Host
+  $ErrorActionPreference = 'Stop'
+  if (-not (Test-Path $deptTool)) {
+    Bail '자비스 운영 틀(pack)을 설치하지 못했습니다.' `
+         '자비스 앱을 한 번 실행해 주신 뒤, 이 파일을 다시 두 번 눌러 주세요.' 2
+  }
+  Say '운영 틀 설치 완료.' 'Green'
+}
+
 # ── [2/6] git 확인 (없으면 자동 설치 시도) ──────────────
 Stage 2 '파일을 받아올 도구(git)를 확인합니다'
 $git = Get-Command git -ErrorAction SilentlyContinue
