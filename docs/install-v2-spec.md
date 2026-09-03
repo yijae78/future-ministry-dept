@@ -75,7 +75,7 @@ macOS 실측 보강(2026-09-03 분석·CI): ①DMG는 드래그형이 아니라 
 - 문제 해결 항목: 자비스 미설치 / 인터넷 / Windows SmartScreen·Edge 다운로드 차단 / macOS 우클릭→열기 / 로그 보내기
 
 ## 7. 검증(CI · 부서 저장소 `.github/workflows/install-e2e.yml`)
-matrix: `windows-latest`(setup.exe `/S`) · `macos-latest`(arm64 DMG) · `macos-13`(x64 DMG). 각: 공식 자비스 설치 → Stage0 진입(`.cmd` / `install.sh`) → `doctor` JSON `ok:true` 단언 → 수신부 발화(`cys-install://tech/frar`)로 핸들러 경로 검증 → 2회 재실행 멱등 단언 → 로그 아티팩트. 로컬 V1(한글 콘솔 렌더) + 실유저 수락(Windows 이지현 · macOS 지원자 1인).
+matrix: `windows-latest`(setup.exe `/S`) · `macos-latest`(arm64 DMG) · `macos-15-intel`(x64 DMG). 각: 공식 자비스 설치 → Stage0 진입(`.cmd` / `install.sh`) → `doctor` JSON `ok:true` 단언 → 수신부 발화(`cys-install://tech/frar`)로 핸들러 경로 검증 → 2회 재실행 멱등 단언 → 로그 아티팩트. 로컬 V1(한글 콘솔 렌더) + 실유저 수락(Windows 이지현 · macOS 지원자 1인).
 
 ## 8. 합격 기준(V0)
 ⓐ 부서 4개 생성(depts.json·pack-dept·ping) ⓑ 필수 기술자 전량 클론 ⓒ doctor ok ⓓ 한글 로그 정상 ⓔ 2회 재실행 동일 결과 ⓕ 수신부 발화 성공 ⓖ 대시보드 ② 확인 완료 — 3개 러너 + 실유저 2명.
