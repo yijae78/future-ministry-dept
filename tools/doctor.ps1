@@ -1,4 +1,5 @@
-﻿# doctor.ps1 — 설치 자가 진단. 이 기계 위에서 산출물 전부를 실측해 항목별 PASS/FAIL을 찍는다.
+﻿# v2에서 fm 패키지로 대체됨(호환용 보존) — 정본: tools/install.cmd + tools/fm/ (docs/install-v2-spec.md)
+# doctor.ps1 — 설치 자가 진단. 이 기계 위에서 산출물 전부를 실측해 항목별 PASS/FAIL을 찍는다.
 # "설치됐습니다"라는 주장 대신, 각 기계가 스스로 증명하게 하는 장치(오너 결재 2026-09-02).
 # 쓰기 0 — 읽기·조회만 한다. 종료코드: 0 = 필수 전항 PASS · 1 = 필수 FAIL 있음.
 param([switch]$Quiet)

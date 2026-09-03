@@ -1,4 +1,5 @@
-﻿<#
+﻿# v2에서 fm 패키지로 대체됨(호환용 보존) — 정본: tools/install.cmd + tools/fm/ (docs/install-v2-spec.md)
+<#
 .SYNOPSIS
   칼빈(Future Ministry) 부서 패키지를 이 PC의 자비스(cys) 터미널에 설치한다 — 멱등 · 기본 드라이런.
 

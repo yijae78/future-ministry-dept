@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# v2에서 fm 패키지로 대체됨(호환용 보존) — 정본: tools/install.cmd + tools/fm/ (docs/install-v2-spec.md)
 # Future Ministry 부서 설치기 — 맥용 런처.
 # bash 재구현이 아니라 setup.ps1 에 그대로 위임한다 (로직을 1벌로 유지한다 · BRIEF T4-B-3 B안).
 # 인자는 Windows 와 똑같이 쓴다:  ./tools/setup.sh -Dept future-ministry -Only frar -Apply
