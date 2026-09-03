@@ -98,13 +98,21 @@ jobs:
           "$B/Contents/MacOS/cys" init-pack 2>&1 | tail -3 || true
           ls -la "$HOME/.cys/pack/bin/cys-dept" && head -1 "$HOME/.cys/pack/bin/cys-dept"
           ls -la "$B/Contents/MacOS" "$B/Contents/Resources" | head -40
-          find "$B/Contents/Resources/runtime" -maxdepth 3 \( -name python3 -o -name git -o -name node -o -name bash -o -name uv \) -type f 2>/dev/null | head -20
+          echo "--- runtime tree(depth 3) ---"; find "$B/Contents/Resources/runtime" -maxdepth 3 2>/dev/null | head -60
+          echo "--- 실행체 후보(심볼릭 포함) ---"; find "$B/Contents/Resources/runtime" -maxdepth 4 \( -name python3 -o -name python3.12 -o -name git -o -name node -o -name bash -o -name uv \) \( -type f -o -type l \) 2>/dev/null | head -20
           codesign -dv "$B" 2>&1 | head -5 || true
           spctl -a -vv "$B" 2>&1 | head -3 || true
           "$B/Contents/MacOS/cys" --version
           "$B/Contents/MacOS/cysd" --version 2>&1 | head -1 || true
-          PY=$(find "$B/Contents/Resources/runtime" -path "*python*/bin/python3" -type f | head -1); "$PY" --version
-          GIT=$(find "$B/Contents/Resources/runtime" -path "*git*/bin/git" -type f | head -1); "$GIT" --version
-          NODE=$(find "$B/Contents/Resources/runtime" -path "*node*/bin/node" -type f | head -1); "$NODE" --version
+          # 스펙 §2 고정 경로 그대로 검증(해석기 계약) — 심볼릭이어도 실행되면 된다
+          PY="$B/Contents/Resources/runtime/python/bin/python3";  [ -x "$PY" ]   || PY=$(find "$B/Contents/Resources/runtime" -path "*python*/bin/python3*" \( -type f -o -type l \) | head -1)
+          GIT="$B/Contents/Resources/runtime/git/bin/git";        [ -x "$GIT" ]  || GIT=$(find "$B/Contents/Resources/runtime" -path "*git*/bin/git" \( -type f -o -type l \) | head -1)
+          NODE="$B/Contents/Resources/runtime/node/bin/node";     [ -x "$NODE" ] || NODE=$(find "$B/Contents/Resources/runtime" -path "*node*/bin/node" \( -type f -o -type l \) | head -1)
+          echo "PY=$PY GIT=$GIT NODE=$NODE"
+          "$PY" --version; "$GIT" --version; "$NODE" --version
+          # cys-dept 가 요구하는 bare 이름 해석이 PATH 선두 주입으로 만족되는지(스펙 §2 실행 env)
+          export PATH="$B/Contents/MacOS:$(dirname "$PY"):$(dirname "$GIT"):$(dirname "$NODE"):/usr/bin:/bin"
+          command -v cys; command -v cysd; command -v python3; command -v git; command -v node
+          python3 -c "import fcntl,json,sys;print('fcntl ok',sys.version.split()[0])"
           echo "BASH=$(bash --version | head -1)"
           echo "RESULT: bundle-layout OK ($(sw_vers -productVersion) $(uname -m))"
