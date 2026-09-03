@@ -1,0 +1,138 @@
+name: install-e2e
+# 설치 100% 관문(스펙 §7): 공식 자비스만 깔린 클린 러너 3종에서 대시보드 진입 경로 그대로 완주한다.
+#  Windows: setup.exe /S → tools/install.cmd → doctor ok → cys-install:// 수신 → 재실행 멱등
+#  macOS  : DMG(.support/cys.app→/Applications) → tools/install.sh → doctor ok → cys-install:// 수신 → 재실행 멱등
+# 수동 실행(workflow_dispatch) + fix/install-100·main push 시 실행.
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/install-100, main]
+    paths-ignore: ["docs/**", "README.md", "techs/**/*.md"]
+
+env:
+  CYS_VER: "0.14.29"
+  FM_CI: "1"
+
+jobs:
+  e2e:
+    name: "${{ matrix.label }}"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            label: "Windows 11 (setup.exe /S)"
+          - runner: macos-latest
+            label: "macOS Apple Silicon (DMG)"
+          - runner: macos-13
+            label: "macOS Intel (DMG)"
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── 1. 공식 자비스 설치(유저와 동일한 배포물) ────────────────────────────
+      - name: "[win] 자비스 setup.exe 무인 설치"
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $u = "https://github.com/idoforgod/cys-terminal/releases/download/v$env:CYS_VER/cys_${env:CYS_VER}_x64-setup.exe"
+          Invoke-WebRequest -Uri $u -OutFile "$env:TEMP\cys-setup.exe"
+          $p = Start-Process -FilePath "$env:TEMP\cys-setup.exe" -ArgumentList "/S" -Wait -PassThru
+          "setup exit=$($p.ExitCode)"
+          Get-ChildItem "$env:LOCALAPPDATA\cys" | Select-Object Name | Out-String
+          & "$env:LOCALAPPDATA\cys\cys.exe" --version
+          & "$env:LOCALAPPDATA\cys\runtime\python\python3.exe" --version
+          # 순정 PC 가정: 유저 PATH 에 cys 를 넣지 않는다(설치기가 스스로 찾아야 한다)
+      - name: "[mac] 자비스 DMG 설치(.support/cys.app → /Applications)"
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          A=$([ "$(uname -m)" = "arm64" ] && echo aarch64 || echo x64)
+          curl -fL -o /tmp/cys.dmg "https://github.com/idoforgod/cys-terminal/releases/download/v${CYS_VER}/cys_${CYS_VER}_${A}.dmg"
+          MNT=$(hdiutil attach /tmp/cys.dmg -nobrowse -readonly | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1)
+          APP=""; for c in "$MNT/.support/cys.app" $(find "$MNT" -maxdepth 3 -type d -name "*.app"); do [ -x "$c/Contents/MacOS/cys" ] && { APP="$c"; break; }; done
+          [ -n "$APP" ]; ditto "$APP" /Applications/cys.app; hdiutil detach "$MNT" || true
+          /Applications/cys.app/Contents/MacOS/cys --version
+          # 순정 맥 가정: /usr/local/bin/cys 심볼릭 없음(「셸에 cys 설치」 미클릭)
+          [ ! -e /usr/local/bin/cys ] || echo "NOTE: runner already has /usr/local/bin/cys"
+
+      # ── 2. 유저 진입 경로 그대로(패키지 = 이 체크아웃) ──────────────────────
+      - name: "[win] 첫 설치(install.cmd)"
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          set FM_PKG_DIR=%GITHUB_WORKSPACE%
+          call tools\install.cmd bootstrap
+          echo install.cmd exit=%ERRORLEVEL%
+      - name: "[mac] 첫 설치(install.sh)"
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export FM_PKG_DIR="$GITHUB_WORKSPACE"
+          bash tools/install.sh bootstrap
+
+      # ── 3. 실물 판정(doctor JSON) ────────────────────────────────────────────
+      - name: "doctor ok 단언"
+        shell: bash
+        run: |
+          set -euxo pipefail
+          R="$HOME/.cys/fm-install/last-result.json"
+          [ -f "$R" ] || { echo "last-result.json 없음" >&2; exit 1; }
+          cat "$R"
+          python3 - "$R" <<'EOF' || true
+          import json,sys; d=json.load(open(sys.argv[1],encoding="utf-8"))
+          bad=[c for c in d.get("checks",[]) if c.get("required") and not c.get("ok")]
+          print("REQUIRED FAIL:", bad)
+          raise SystemExit(0 if d.get("ok") else 1)
+          EOF
+
+      # ── 4. 원클릭 수신부 발화(대시보드 버튼과 동일 URL) ───────────────────────
+      - name: "[win] cys-install:// 발화 → 핸들러 실행 확인"
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $before = (Get-ChildItem "$env:USERPROFILE\.cys\fm-install\logs" -ErrorAction SilentlyContinue).Count
+          Start-Process "cys-install://tech/frar"
+          Start-Sleep -Seconds 90
+          $after = (Get-ChildItem "$env:USERPROFILE\.cys\fm-install\logs" -ErrorAction SilentlyContinue).Count
+          "logs before=$before after=$after"
+          if ($after -le $before) { throw "핸들러가 실행되지 않았다(로그 증가 없음)" }
+      - name: "[mac] cys-install:// 발화 → 수신부 앱 실행 확인"
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          before=$(ls "$HOME/.cys/fm-install/logs" 2>/dev/null | wc -l | tr -d ' ')
+          open "cys-install://tech/frar"
+          for i in $(seq 1 90); do after=$(ls "$HOME/.cys/fm-install/logs" 2>/dev/null | wc -l | tr -d ' '); [ "$after" -gt "$before" ] && break; sleep 1; done
+          echo "logs before=$before after=$after"; [ "$after" -gt "$before" ]
+
+      # ── 5. 재실행 멱등 ────────────────────────────────────────────────────────
+      - name: "[win] 재실행 멱등"
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          set FM_PKG_DIR=%GITHUB_WORKSPACE%
+          call tools\install.cmd bootstrap
+      - name: "[mac] 재실행 멱등"
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          export FM_PKG_DIR="$GITHUB_WORKSPACE"; bash tools/install.sh bootstrap
+      - name: "재실행 후 doctor ok"
+        shell: bash
+        run: |
+          python3 -c "import json,os,sys;d=json.load(open(os.path.expanduser('~/.cys/fm-install/last-result.json'),encoding='utf-8'));print('ok=',d.get('ok'));sys.exit(0 if d.get('ok') else 1)"
+
+      - name: "로그 아티팩트"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fm-install-logs-${{ matrix.runner }}
+          path: |
+            ~/.cys/fm-install/
+            ~/Desktop/퓨처미니스트리-설치로그.txt
+          if-no-files-found: ignore
