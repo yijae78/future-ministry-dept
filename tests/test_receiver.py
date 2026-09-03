@@ -20,10 +20,17 @@ class ReceiverTest(unittest.TestCase):
             ctx = steps.make_ctx(sb.pkg, sub="receiver-register", dry_run=True)
             s = receiver.mac_script(ctx)
             self.assertIn("on open location theURL", s)
-            self.assertIn('do shell script "/bin/bash " & quoted form of sh & " handle " & quoted form of theURL', s)
+            # (c) 설치 진행이 보이게: 임시 .command 를 ~/.cys/fm-install 아래에 쓰고 Terminal 로 연다
+            self.assertIn('" handle " & quoted form of theURL', s)
+            self.assertIn('do shell script "open -a Terminal " & quoted form of cmdFile', s)
+            self.assertIn('& "/handle-" & stamp & ".command"', s)
+            self.assertIn("#!/bin/bash", s)
+            self.assertIn('read -p \\"엔터를 누르면 창이 닫힙니다\\"', s)
+            self.assertIn("chmod +x", s)
             self.assertIn(receiver._as_str(str(sb.pkg / "tools" / "install.sh")), s)  # AppleScript 문자열 이스케이프 반영
+            self.assertIn(receiver._as_str(str(sb.home / ".cys" / "fm-install")), s)
             self.assertIn("display notification", s)
-            self.assertIn("fm-install", s)
+            self.assertNotIn('do shell script "/bin/bash " & quoted form of sh', s, "숨은 실행(do shell script 직접) 금지")
 
     def test_dry_run_register_touches_nothing(self):
         with Sandbox() as sb:

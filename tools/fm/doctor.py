@@ -84,6 +84,18 @@ def run(ctx: Ctx) -> dict:
         ok = bool(dest and (dest / ".git").is_dir())
         _chk(checks, f"tech:{t.id}", t.required, ok, str(dest),
              "인터넷 연결을 확인하고 설치를 다시 실행해 주세요" if t.required else "선택 항목입니다")
+        # 의존성(참고 · required=false): python → .fm-site, node → node_modules, 실행 래퍼 존재도 함께 기록
+        if ok and t.install_cmd:
+            from .steps import SITE_DIR, WRAPPER_NAME
+            is_node = t.runtime == "node" or t.install_cmd.split()[0] in ("npm", "pnpm", "yarn")
+            dep_dir = dest / ("node_modules" if is_node else SITE_DIR)
+            has_run = bool((t.requires or {}).get("run"))
+            wrapper = dest / WRAPPER_NAME
+            detail = f"{dep_dir.name} {'있음' if dep_dir.is_dir() else '없음'}"
+            if has_run:
+                detail += f" · {WRAPPER_NAME} {'있음' if wrapper.exists() else '없음'}"
+            _chk(checks, f"deps:{t.id}", False, dep_dir.is_dir() and (wrapper.exists() if has_run else True), detail,
+                 "설치를 다시 실행하면 의존성·실행 래퍼를 만듭니다(--no-deps 로 껐다면 정상)")
     # 9. 수신부
     st = receiver.status(ctx)
     _chk(checks, "receiver", True, st["ok"], st["detail"], "설치를 다시 실행하면 다시 등록됩니다")

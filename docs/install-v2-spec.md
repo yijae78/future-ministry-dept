@@ -52,8 +52,8 @@ macOS 실측 보강(2026-09-03 분석·CI): ①DMG는 드래그형이 아니라 
 5. `~/.cys/depts.json` parent 백필 — **부서 키**로(표시명 금지)
 6. `CHARTER.md` → `~/.cys/pack-dept-<dept-N>/`
 7. 기술자 클론(번들 git · `--depth 1` · `visibility:public`은 필수, `optional:true`는 경고) · `.git` 없는 폴더는 `.broken-<ts>`로 치우고 재클론
-8. 의존성(`--deps` 또는 `delivery:install` 기본 on): 번들 node/python으로 `npm install`/`pip install` · 실패는 **실패**로 계상(기술자 단위)
-9. 좌석(surface) 정합: 데몬 `ping` 최대 30s 재시도 후 판정
+8. 의존성(기본 on · `--no-deps`로 끔) — **격리**: 번들 python의 site-packages에는 절대 쓰지 않는다(맥 서명 번들 봉인 파괴 위험). python 기술자 = `python3 -m pip install --target "<기술자 cwd>/.fm-site" …`(`-r`·`-e .` 모두 — 번들 python은 embeddable(`._pth`)이라 setuptools가 없고 PYTHONPATH를 무시하므로 `-e .`/`.`은 그 프로젝트의 의존성(pyproject `[project].dependencies`·requirements.txt)만 설치하고 소스는 cwd에서 import) · node 기술자 = 종전대로 cwd의 `node_modules` · 실패는 **실패**로 계상(기술자 단위) · 멱등 마커 `.fm-site/.fm-deps.json`(명령+참조파일 해시). **실행 래퍼**: 기술자마다 Windows `<cwd>\실행.cmd` / macOS `<cwd>/실행.command`(chmod +x) — 번들 런타임 PATH 선두 주입 + manifest `requires.run` 실행(cwd는 `requires.cwd` 존중). python은 PYTHONPATH 대신 생성된 `<cwd>/.fm-run.py`가 sys.path에 `.fm-site`·cwd를 넣어 실행한다. `delivery:hosted`는 래퍼를 만들지 않는다. doctor는 `.fm-site`/`node_modules`(+래퍼) 존재를 **참고(required=false)** 항목 `deps:<id>`로 표시한다.
+9. 좌석(surface) 정합: 데몬 `ping` 최대 30s 재시도 후 판정. **닫기(reap) 금지** — 선언에 있는데 없는 기술자 좌석만 `new-surface`로 만들고, 잉여·중복·역할 좌석은 로그에 "그대로 둠"으로만 기록한다(목사님이 직접 연 창을 재설치가 닫는 일이 없어야 한다).
 10. 수신부 등록: Windows HKCU `cys-install` → `install.cmd handle "%1"` 경로 / macOS `~/Applications/자비스 설치 수신부.app`(osacompile · CFBundleURLTypes `cys-install` · `lsregister -f`)
 11. doctor → `~/.cys/fm-install/last-result.json` + 바탕화면 `퓨처미니스트리-설치로그.txt`(UTF-8) + 최종 배너 한 줄(성공/실패 + 로그 경로 + "이 파일을 보내주세요")
 
@@ -63,7 +63,7 @@ macOS 실측 보강(2026-09-03 분석·CI): ①DMG는 드래그형이 아니라 
 ## 5. 런처·수신부·Stage0
 - **Windows** `install.cmd`: `chcp 65001`, 번들 python3 탐색(없으면 자비스 안내), `python3 -X utf8 -m fm.cli bootstrap`. Stage0(대시보드 다운로드 `.cmd`)은 같은 내용에 "패키지 클론(번들 git)" 1단계가 앞에 붙는다. 시스템 Git·winget·UAC **사용 금지**.
 - **macOS** `install.sh`: `curl -fsSL …/tools/install.sh | bash` 로 진입(격리 표시 없음). 번들 python3 탐색 → 패키지 클론(번들 git) → `python3 -X utf8 -m fm.cli bootstrap`. 같은 파일을 `퓨처미니스트리-설치.command`로도 제공(우클릭→열기 안내 동봉).
-- **수신부**: Windows = HKCU 등록(관리자 불필요). macOS = 로컬 생성 AppleScript 앱(격리 없음 → 경고 없음) — `on open location` → `install.sh handle <url>` → `display notification` + 실패 시 로그 열기.
+- **수신부**: Windows = HKCU 등록(관리자 불필요) — 명령줄 `"<python3 절대경로>" -X utf8 "<pkg>\tools\fm\cli.py" handle "%1"`. macOS = 로컬 생성 AppleScript 앱(격리 없음 → 경고 없음) — `on open location`이 임시 `.command` 파일(`#!/bin/bash` + `"/bin/bash" "<pkg>/tools/install.sh" handle '<url>'` + 마지막 `read -p "엔터를 누르면 창이 닫힙니다"`)을 `~/.cys/fm-install/handle-<ts>.command`로 쓰고 `do shell script "open -a Terminal " & quoted form of 그경로`로 연다(설치 진행이 Terminal에 보임 · Automation 권한 프롬프트 없음 · 로컬 파일이라 격리 없음). 끝나면 fm.cli가 `display notification`(실패 시 로그 열기), 창을 못 열면 앱이 알림 + 로그 폴더 열기.
 - **핸들러**: 화이트리스트 `^cys-install://(dept|tech)/([a-z0-9][a-z0-9-]*)/?$` 유지, 패키지 `git pull --ff-only`(번들 git), 대상 설치, 결과 알림.
 - **구 경로 호환**: `bootstrap.ps1`·`cys-install-handler.ps1`은 shim(각 5줄)으로 남긴다 — 기등록 PC(이지현)가 재실행하면 `[3/6] pull`로 새 코드를 받고 그대로 동작.
 

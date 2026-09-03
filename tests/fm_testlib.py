@@ -85,12 +85,16 @@ def javis_ready() -> bool:
     return Path(lay["bash"]).exists() and Path(lay["python3"]).exists()
 
 
-def make_local_repo(git: Path, base: Path, name: str) -> str:
+def make_local_repo(git: Path, base: Path, name: str, files: dict[str, str] | None = None) -> str:
     """클론 대상이 될 로컬 bare 리포. 반환 = clone 에 넘길 경로(문자열)."""
     src = base / f"{name}-src"
     src.mkdir(parents=True, exist_ok=True)
     (src / "README.md").write_text(f"# {name}\n", encoding="utf-8")
     (src / "requirements.txt").write_text("", encoding="utf-8")
+    for rel, text in (files or {}).items():
+        p = src / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
     kw = dict(capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
     subprocess.run([str(git), "-C", str(src), "init", "-q"], **kw)
@@ -114,8 +118,12 @@ def make_fake_package(base: Path, git: Path | None) -> Path:
         (pkg / "missions" / f"{k}.md").write_text(f"# mission {k}\n", encoding="utf-8")
     repos = base / "repos"
     repos.mkdir(exist_ok=True)
+    ca_files = {
+        "app/main.py": "import sys\nimport fm_probe_dep\nprint('RUN-OK', fm_probe_dep.V, sys.argv)\n",
+        "pyproject.toml": '[project]\nname="church-admin"\nversion="0.1"\ndependencies=["six>=1.0"]\n',
+    }
     r_frar = make_local_repo(git, repos, "frar") if git else "https://invalid.invalid/frar.git"
-    r_ca = make_local_repo(git, repos, "church-admin") if git else "https://invalid.invalid/ca.git"
+    r_ca = make_local_repo(git, repos, "church-admin", ca_files) if git else "https://invalid.invalid/ca.git"
     r_pn = make_local_repo(git, repos, "pray-news") if git else "https://invalid.invalid/pn.git"
     mf = {
         "package": "future-ministry-test", "display": "Future Ministry(칼빈)", "version": "9.9.9",
@@ -128,10 +136,12 @@ def make_fake_package(base: Path, git: Path | None) -> Path:
              "tier": 1, "account": "owner", "cwd_template": "$HOME/Future-Ministry/행정관리부",
              "mission_file": "missions/fm-admin.md", "techs": [
                  {"name": "frar", "id": "frar", "repo": r_frar, "cwd_template": "$HOME/Future-Ministry/행정관리부/frar",
-                  "visibility": "public", "delivery": "install", "requires": {"runtime": "python", "install": None}},
+                  "visibility": "public", "delivery": "install",
+                  "requires": {"runtime": "python", "install": "pip install -r requirements.txt", "run": "streamlit run run.py"}},
                  {"name": "Church-Admin", "id": "church-admin", "repo": r_ca,
                   "cwd_template": "$HOME/Future-Ministry/행정관리부/Church-Admin", "visibility": "public",
-                  "delivery": "install", "requires": {"runtime": "python", "install": "python -c pass"}}]},
+                  "delivery": "install",
+                  "requires": {"runtime": "python", "cwd": "app", "install": "pip install -r requirements.txt", "run": "python main.py --flag"}}]},
             {"key": "fm-worship", "display": "예배교육부", "mission_key": "fm-worship", "parent": "future-ministry",
              "tier": 1, "account": "owner", "cwd_template": "$HOME/Future-Ministry/예배교육부",
              "mission_file": "missions/fm-worship.md", "techs": [
@@ -143,7 +153,8 @@ def make_fake_package(base: Path, git: Path | None) -> Path:
              "mission_file": "missions/fm-sermon.md", "techs": [
                  {"name": "pray-news", "id": "pray-news", "repo": r_pn,
                   "cwd_template": "$HOME/Future-Ministry/설교기획부/pray-news", "visibility": "public",
-                  "delivery": "install", "optional": True, "requires": {"runtime": "node", "install": None}}]},
+                  "delivery": "install", "optional": True,
+                  "requires": {"runtime": "node", "install": None, "run": "npm run dev"}}]},
         ],
     }
     (pkg / "manifest.json").write_text(json.dumps(mf, ensure_ascii=False, indent=2), encoding="utf-8")

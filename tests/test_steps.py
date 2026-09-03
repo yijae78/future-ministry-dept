@@ -1,6 +1,7 @@
 """steps 각 단계의 동작·멱등성 — HOME 샌드박스 + 가짜 cys-dept 스텁(bash · dept-9 출력)."""
 import json
 import os
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -201,22 +202,98 @@ class RealRunTest(unittest.TestCase):
             self.assertTrue((sb.home / "Future-Ministry" / "행정관리부" / "frar" / ".git").exists())
             self.assertFalse((sb.home / "Future-Ministry" / "행정관리부" / "Church-Admin").exists())
 
-    def test_deps_no_deps_and_unknown_command(self):
+    def test_deps_isolated_to_fm_site_and_wrappers(self):
+        """(a) 의존성 격리: pip 는 항상 --target <cwd>/.fm-site · -e . 은 프로젝트 의존성만 · 실행 래퍼 생성·실행."""
         with Sandbox() as sb:
             ctx = make_ctx(sb, dept="fm-admin", deps=False)
             steps.step7_clone(ctx)
-            st, d = steps.step8_deps(ctx)
-            self.assertEqual((st, d), ("skipped", "--no-deps"))
+            ca = sb.home / "Future-Ministry" / "행정관리부" / "Church-Admin"
+            frar = sb.home / "Future-Ministry" / "행정관리부" / "frar"
+            # --no-deps 라도 실행 래퍼는 만든다
+            st, _ = steps.step8_deps(ctx)
+            self.assertEqual(st, "done", ctx.log.failures)
+            self.assertTrue((ca / steps.WRAPPER_NAME).exists())
+            self.assertTrue((ca / steps.RUNNER_NAME).exists())
+            self.assertFalse((ca / steps.SITE_DIR).exists(), "--no-deps 면 .fm-site 를 만들지 않는다")
+            # argv 번역
+            argv = steps.resolve_install_argv(ctx, "pip install -r requirements.txt", "python", frar)
+            self.assertEqual(Path(argv[0]), Path(ctx.lay["python3"]))
+            self.assertEqual(argv[1:4], ["-m", "pip", "install"])
+            self.assertIn("--target", argv)
+            self.assertEqual(Path(argv[argv.index("--target") + 1]), frar / steps.SITE_DIR)
+            self.assertEqual(argv[-2:], ["-r", "requirements.txt"])
+            argv = steps.resolve_install_argv(ctx, "pip install -e .", "python", ca)
+            self.assertNotIn("-e", argv)
+            self.assertNotIn(".", argv)
+            self.assertEqual(argv[-1], "six>=1.0", "-e . → pyproject [project].dependencies 만")
+            argv = steps.resolve_install_argv(ctx, "pip install -e .", "python", frar)
+            self.assertEqual(argv[-1], steps._NOOP, "선언된 의존성이 없으면 noop 표식")
+            self.assertIsNone(steps.resolve_install_argv(ctx, "make all", "none", frar))
+            argv = steps.resolve_install_argv(ctx, "npm install", "node", frar)
+            self.assertIsNotNone(argv)
+            self.assertIn("install", argv)
+            self.assertNotIn("site-packages", " ".join(argv))
+            # 실제 설치(빈 requirements → 오프라인 안전) + 멱등 마커
             ctx = make_ctx(sb, dept="fm-admin", deps=True)
             st, _ = steps.step8_deps(ctx)
             self.assertEqual(st, "done", ctx.log.failures)
-            argv = steps.resolve_install_argv(ctx, "pip install -r requirements.txt", "python")
-            self.assertEqual(argv[1:3], ["-m", "pip"])
-            self.assertEqual(Path(argv[0]), Path(ctx.lay["python3"]))
-            self.assertIsNone(steps.resolve_install_argv(ctx, "make all", "none"))
-            argv = steps.resolve_install_argv(ctx, "npm install", "node")
-            self.assertIsNotNone(argv)
-            self.assertIn("install", argv)
+            self.assertTrue((frar / steps.SITE_DIR / steps.DEPS_MARKER).exists())
+            bundle_site = Path(ctx.lay["python3"]).parent / "Lib" / "site-packages"
+            self.assertFalse((bundle_site / "fm_probe_dep.py").exists())
+            ctx2 = make_ctx(sb, dept="fm-admin", deps=True)
+            st2, _ = steps.step8_deps(ctx2)
+            self.assertEqual(st2, "skipped", ctx2.log.failures)
+            text = Path(ctx2.log.path).read_text(encoding="utf-8")
+            self.assertIn("이미 설치됨(.fm-site · 동일 선언)", text)
+            self.assertIn("실행 래퍼 이미 최신", text)
+            # 래퍼 내용 계약
+            w = (ca / steps.WRAPPER_NAME).read_bytes()
+            if resolve.IS_WIN:
+                self.assertTrue(all(b < 128 for b in w), "Windows .cmd 는 ASCII 전용")
+                self.assertIn(b"%~dp0", w)
+                self.assertIn(b"runtime\\python\\python3.exe", w)
+                self.assertIn(b"pause", w)
+            else:
+                self.assertTrue(w.startswith(b"#!/bin/bash"))
+                self.assertIn("엔터를 누르면".encode("utf-8"), w)
+                self.assertTrue(os.access(ca / steps.WRAPPER_NAME, os.X_OK))
+            pn = sb.home / "Future-Ministry" / "설교기획부" / "pray-news"
+            ctx3 = make_ctx(sb, dept="fm-sermon", deps=False)
+            steps.step7_clone(ctx3)
+            steps.step8_deps(ctx3)
+            wn = (pn / steps.WRAPPER_NAME).read_text(encoding="utf-8")
+            self.assertIn('npm-cli.js" run dev' if resolve.IS_WIN else "npm run dev", wn)
+            self.assertFalse((pn / steps.RUNNER_NAME).exists(), "node 기술자는 python 실행기 불필요")
+            # python 실행기가 .fm-site 를 sys.path 에 넣고 requires.cwd 에서 run 을 실행한다(PYTHONPATH 무시 대응)
+            (ca / steps.SITE_DIR).mkdir(exist_ok=True)
+            (ca / steps.SITE_DIR / "fm_probe_dep.py").write_text("V = 'from-fm-site'\n", encoding="utf-8")
+            r = subprocess.run([str(ctx.lay["python3"]), "-X", "utf8", str(ca / steps.RUNNER_NAME)],
+                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("RUN-OK from-fm-site ['main.py', '--flag']", r.stdout)
+
+    def test_hosted_gets_no_wrapper(self):
+        with Sandbox() as sb:
+            ctx = make_ctx(sb, dept="fm-worship", deps=False)
+            steps.step8_deps(ctx)
+            self.assertFalse((sb.home / "Future-Ministry" / "예배교육부" / "godsaengbook-grace").exists())
+
+
+class SeatPlanTest(unittest.TestCase):
+    """(b) 좌석 정합은 생성만 — reap 계획이 절대 나오지 않는다."""
+
+    def test_plan_seats_never_reaps(self):
+        S = steps.Seat
+        seats = [S(1, "dept-master", False, "부서장"), S(2, "-", False, "frar"), S(3, "-", False, "frar"),
+                 S(4, "-", False, "목사님이 연 창"), S(5, "-", True, "Office-Monitor"), S(6, "-", False, "x")]
+        creates, extras, dups = steps.plan_seats(["frar", "Office-Monitor", "Church-Admin"], seats)
+        self.assertEqual(creates, ["Office-Monitor", "Church-Admin"], "exited 좌석은 없는 것으로 본다")
+        self.assertEqual([s.title for s in extras], ["목사님이 연 창", "x"])
+        self.assertEqual([s.id for s in dups], [3])
+        import inspect
+        src = inspect.getsource(steps.step9_seats)
+        self.assertNotIn("close-surface", src)
+        self.assertNotIn("reap", src.replace("닫기(reap) 금지", ""))
 
 
 class ParseHelpersTest(unittest.TestCase):

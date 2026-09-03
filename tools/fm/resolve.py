@@ -204,6 +204,30 @@ def path_prepend(root: Path) -> list[str]:
 
 
 # ── 실행 환경 ─────────────────────────────────────────────────────────────────
+def git_env(root: Path | None) -> dict[str, str]:
+    """macOS 번들 git(dugite) 보정 — 절대경로로 부르면 헬퍼(remote-https) 디렉터리를 못 찾는다
+    (GitHub macOS 러너 실측 2026-09-03: `git: 'remote-https' is not a git command`).
+    경로가 **실재할 때만** 설정한다(런타임 탐색). Windows PortableGit 은 exe 상대경로로 헬퍼를 찾으므로 해당 없음.
+    """
+    out: dict[str, str] = {}
+    if not root:
+        return out
+    g = Path(root) / "Contents" / "Resources" / "runtime" / "git"
+    if not g.is_dir():
+        return out
+    exec_path = g / "libexec" / "git-core"
+    if exec_path.is_dir():
+        out["GIT_EXEC_PATH"] = str(exec_path)
+        out["PREFIX"] = str(g)  # dugite 관례 · 무해
+    tmpl = g / "share" / "git-core" / "templates"
+    if tmpl.is_dir():
+        out["GIT_TEMPLATE_DIR"] = str(tmpl)
+    ca = g / "ssl" / "cacert.pem"
+    if ca.is_file():
+        out["GIT_SSL_CAINFO"] = str(ca)
+    return out
+
+
 def env_for_cys_dept(root: Path | None = None, home: Path | None = None) -> dict[str, str]:
     """cys-dept(bash) 호출용 env.
 
@@ -227,6 +251,7 @@ def env_for_cys_dept(root: Path | None = None, home: Path | None = None) -> dict
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONDONTWRITEBYTECODE"] = "1"  # 맥 번들 봉인 보호(cys-dept SEAL-1 과 동일 원칙)
+    env.update(git_env(root))              # macOS dugite git 헬퍼 경로(cys-dept 도 git 을 쓸 수 있다)
     env["HOME"] = str(home)
     if IS_WIN:
         env.setdefault("USERPROFILE", str(home))

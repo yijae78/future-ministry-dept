@@ -61,6 +61,7 @@ class Log:
         self.ci = ci
         self.console = console
         self.warnings: list[str] = []
+        self.resolved: list[str] = []
         self.failures: list[str] = []
         base = (self.home / ".cys" / "fm-install" / "logs") if not dry_run else (
             Path(tempfile.gettempdir()) / "fm-install" / "logs")
@@ -109,6 +110,14 @@ class Log:
         self.warnings.append(m)
         self.raw(f"  ! {m}")
 
+    def resolve_warning(self, needle: str, how: str = "") -> int:
+        """앞서 기록한 경고가 뒤 단계에서 해소되면 최종 요약의 경고 목록에서 빼고 '해소됨'으로 옮긴다."""
+        hit = [w for w in self.warnings if needle in w]
+        for w in hit:
+            self.warnings.remove(w)
+            self.resolved.append(f"{w} → 해소됨" + (f"({how})" if how else ""))
+        return len(hit)
+
     def fail(self, m: str) -> None:
         self.failures.append(m)
         self.raw(f"  x {m}")
@@ -133,6 +142,10 @@ class Log:
     # ── 최종 배너 ──
     def banner(self, ok: bool, detail: str = "") -> str:
         self.raw("")
+        if self.resolved:
+            self.raw(f"-- 해소된 경고 {len(self.resolved)}건 --")
+            for w in self.resolved:
+                self.raw(f"  ~ {w}")
         if self.warnings:
             self.raw(f"-- 경고 {len(self.warnings)}건 --")
             for w in self.warnings:

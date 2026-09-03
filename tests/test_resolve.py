@@ -88,6 +88,31 @@ class ResolveEnvTest(unittest.TestCase):
                     else:
                         os.environ[k] = v
 
+    def test_macos_dugite_git_env_injected_when_present(self):
+        """macOS 번들 git(dugite) 헬퍼 경로 — 실재할 때만 주입(어느 OS 에서든 경로 존재로 판정)."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "cys.app"
+            g = root / "Contents" / "Resources" / "runtime" / "git"
+            (g / "libexec" / "git-core").mkdir(parents=True)
+            (g / "share" / "git-core" / "templates").mkdir(parents=True)
+            (g / "ssl").mkdir()
+            (g / "ssl" / "cacert.pem").write_text("x", encoding="utf-8")
+            ge = resolve.git_env(root)
+            self.assertEqual(Path(ge["GIT_EXEC_PATH"]), g / "libexec" / "git-core")
+            self.assertEqual(Path(ge["GIT_TEMPLATE_DIR"]), g / "share" / "git-core" / "templates")
+            self.assertEqual(Path(ge["GIT_SSL_CAINFO"]), g / "ssl" / "cacert.pem")
+            self.assertEqual(Path(ge["PREFIX"]), g)
+            # cys-dept env 와 도구 env 양쪽에 포함
+            env = resolve.env_for_cys_dept(root, Path(d))
+            self.assertEqual(env["GIT_EXEC_PATH"], ge["GIT_EXEC_PATH"])
+            self.assertEqual(resolve.env_for_tools(root, Path(d))["PREFIX"], ge["PREFIX"])
+            # cacert 가 없으면 GIT_SSL_CAINFO 는 설정하지 않는다(시스템 기본)
+            (g / "ssl" / "cacert.pem").unlink()
+            self.assertNotIn("GIT_SSL_CAINFO", resolve.git_env(root))
+            # 헬퍼 디렉터리가 없으면 아무것도 넣지 않는다(Windows PortableGit 도 여기 해당)
+            self.assertEqual(resolve.git_env(Path(d) / "nope"), {})
+            self.assertNotIn("GIT_EXEC_PATH", resolve.env_for_cys_dept(Path(d) / "nope", Path(d)))
+
     def test_home_report_forced(self):
         with tempfile.TemporaryDirectory() as d:
             os.environ["FM_HOME"] = d

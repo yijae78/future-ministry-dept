@@ -6,6 +6,7 @@ setup.ps1 ①~⑨ 를 이식했다. dry-run 이면 모든 쓰기·실행을 "(�
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import json
 import os
 import re
@@ -418,6 +419,7 @@ def _ensure_pack(ctx: Ctx) -> bool:
         ctx.log.fail(f"운영 틀 설치 실패(exit={rc}): {tail(out + err)} — 자비스 앱을 한 번 실행한 뒤 다시 설치해 주세요")
         return False
     ctx.log.ok(f"운영 틀 설치 완료: {tool}")
+    ctx.log.resolve_warning("자비스 운영 틀(pack)이 없습니다", "cys init-pack 으로 설치")
     return True
 
 
@@ -625,16 +627,87 @@ def step7_clone(ctx: Ctx) -> tuple[str, str]:
     return ctx.record("clone", "done" if cloned or ctx.dry_run else "skipped", f"{cloned} cloned")
 
 
-# ── 8. 의존성 ────────────────────────────────────────────────────────────────
-def resolve_install_argv(ctx: Ctx, cmd: str, runtime: str) -> list[str] | None:
-    """선언된 install 문자열을 (번들 실행체 + 인자배열)로 — 셸 해석 없음(매니페스트 한 줄 = 임의 코드 실행 차단)."""
+# ── 8. 의존성(격리) + 실행 래퍼 ──────────────────────────────────────────────
+# ★번들 python 의 site-packages 에는 절대 쓰지 않는다(맥 서명 번들 봉인 파괴 위험 · 코디네이터 결정 2026-09-03).
+#   python 기술자 → `<cwd>/.fm-site` 에 `pip install --target`, node 기술자 → 종전대로 `<cwd>/node_modules`.
+# ★실측(2026-09-03): 번들 python 은 embeddable 배포판(`python312._pth`)이라 PYTHONPATH 를 **무시**하고,
+#   setuptools 가 없어 소스 빌드(`pip install -e .`·pyproject 프로젝트)가 불가하다. 그래서
+#   ① `-e <경로>`/`<경로>` 형태는 그 프로젝트의 **의존성만**(pyproject [project].dependencies 또는
+#      requirements.txt) `.fm-site` 에 깔고 소스는 cwd 에서 직접 import 하게 한다
+#   ② 실행 래퍼는 PYTHONPATH 가 아니라 생성된 `.fm-run.py` 가 sys.path 에 `.fm-site`·cwd 를 넣어 실행한다.
+SITE_DIR = ".fm-site"
+RUNNER_NAME = ".fm-run.py"
+DEPS_MARKER = ".fm-deps.json"
+WRAPPER_NAME = "실행.cmd" if resolve.IS_WIN else "실행.command"
+PY_MODULE_HEADS = {"streamlit", "uvicorn", "flask", "gunicorn", "pytest", "jupyter", "mkdocs", "celery", "hypercorn"}
+_NOOP = "fm-noop-no-deps-declared"
+
+
+def _project_deps(dest: Path) -> tuple[list[str], list[Path]]:
+    """`pip install -e .` 대체 — 프로젝트의 의존성 목록과 그 근거 파일들(setuptools 없는 번들 python 대응)."""
+    deps: list[str] = []
+    sources: list[Path] = []
+    pp = dest / "pyproject.toml"
+    if pp.exists():
+        try:
+            import tomllib
+            data = tomllib.loads(pp.read_text(encoding="utf-8"))
+            deps += [str(x) for x in (data.get("project") or {}).get("dependencies") or []]
+            sources.append(pp)
+        except Exception:
+            pass
+    req = dest / "requirements.txt"
+    if req.exists():
+        sources.append(req)
+        for ln in req.read_text(encoding="utf-8", errors="replace").splitlines():
+            s = ln.split("#", 1)[0].strip()
+            if s and not s.startswith("-"):
+                deps.append(s)
+    return deps, sources
+
+
+def resolve_install_argv(ctx: Ctx, cmd: str, runtime: str, dest: Path | None = None) -> list[str] | None:
+    """선언된 install 문자열을 (번들 실행체 + 인자배열)로 — 셸 해석 없음(매니페스트 한 줄 = 임의 코드 실행 차단).
+
+    pip 는 항상 `--target <cwd>/.fm-site` 로 격리한다. `-e X`/로컬 경로 설치는 X 의 의존성만으로 치환한다.
+    설치할 것이 없으면 마지막 원소가 `_NOOP` 인 argv 를 돌려준다(호출부가 건너뜀).
+    """
     tok = cmd.split()
     if not tok:
         return None
     head, rest = tok[0], tok[1:]
     py = str(ctx.lay["python3"])
     if head in ("pip", "pip3"):
-        return [py, "-m", "pip"] + rest
+        if not rest or rest[0] != "install":
+            return [py, "-m", "pip"] + rest
+        site = str((dest or Path(".")) / SITE_DIR)
+        args = rest[1:]
+        out: list[str] = []
+        local_project = False
+        i = 0
+        while i < len(args):
+            a = args[i]
+            if a in ("-e", "--editable"):
+                local_project = True
+                i += 2
+                continue
+            if a in ("--user",) or a.startswith("--target=") or a.startswith("--prefix=") or a.startswith("--root="):
+                i += 1
+                continue
+            if a in ("--target", "-t", "--prefix", "--root"):
+                i += 2
+                continue
+            if a == "." or a.startswith("./") or a.startswith(".\\"):
+                local_project = True
+                i += 1
+                continue
+            out.append(a)
+            i += 1
+        if local_project and dest is not None:
+            deps, _ = _project_deps(dest)
+            out += deps
+        base = [py, "-m", "pip", "install", "--target", site, "--upgrade", "--no-warn-script-location"]
+        return base + (out or [_NOOP])
     if head in ("python", "python3"):
         return [py] + rest
     if head in ("npm", "npx"):
@@ -653,39 +726,185 @@ def resolve_install_argv(ctx: Ctx, cmd: str, runtime: str) -> list[str] | None:
     return None
 
 
+def _deps_key(ctx: Ctx, cmd: str, dest: Path) -> str:
+    """멱등 마커 키 — 설치 명령 + 참조 파일 내용 + 런타임 버전(같은 입력이면 같은 결과)."""
+    h = hashlib.sha256()
+    h.update(cmd.encode("utf-8"))
+    h.update(resolve.OS_KEY.encode())
+    for p in ctx.probe:
+        if p["name"] in ("python3", "node"):
+            h.update(str(p.get("version", "")).encode())
+    tok = cmd.split()
+    for i, a in enumerate(tok):
+        if a in ("-r", "--requirement") and i + 1 < len(tok) and (dest / tok[i + 1]).exists():
+            h.update((dest / tok[i + 1]).read_bytes())
+    if any(a in ("-e", "--editable", ".") or a.startswith("./") for a in tok):
+        deps, _ = _project_deps(dest)
+        h.update("\n".join(deps).encode("utf-8"))
+    return h.hexdigest()[:24]
+
+
+def _runner_source(run_cmd: str, sub_cwd: str) -> str:
+    """`.fm-run.py` — PYTHONPATH 를 무시하는 embeddable python 을 위해 sys.path 를 직접 구성해 실행한다."""
+    return (
+        "# -*- coding: utf-8 -*-\n"
+        "# fm 설치기 v2 가 생성한 실행기 — 번들 python 은 PYTHONPATH 를 무시하므로(embeddable ._pth) 여기서 sys.path 를 구성한다.\n"
+        "import os, runpy, subprocess, sys\n"
+        "HERE = os.path.dirname(os.path.abspath(__file__))\n"
+        f"SITE = os.path.join(HERE, {SITE_DIR!r})\n"
+        f"RUN = {run_cmd.split()!r}\n"
+        f"SUB = {sub_cwd!r}\n"
+        "sys.path[:0] = [SITE, HERE]\n"
+        "os.environ['PYTHONUTF8'] = '1'\n"
+        "os.environ['PATH'] = os.pathsep.join([os.path.join(SITE, 'bin'), os.path.join(SITE, 'Scripts'), os.environ.get('PATH', '')])\n"
+        "os.chdir(os.path.join(HERE, SUB) if SUB else HERE)\n"
+        "head, rest = RUN[0], RUN[1:]\n"
+        "if head in ('python', 'python3'):\n"
+        "    if rest and rest[0] == '-m':\n"
+        "        sys.argv = rest[1:]; runpy.run_module(rest[1], run_name='__main__', alter_sys=True)\n"
+        "    elif rest:\n"
+        "        sys.argv = rest; runpy.run_path(rest[0], run_name='__main__')\n"
+        "    else:\n"
+        "        import code; code.interact()\n"
+        f"elif head in {sorted(PY_MODULE_HEADS)!r}:\n"
+        "    sys.argv = [head] + rest\n"
+        "    runpy.run_module(head, run_name='__main__', alter_sys=True)\n"
+        "else:\n"
+        "    sys.exit(subprocess.call([head] + rest))\n"
+    )
+
+
+def _wrapper_source(tech_id: str, runtime: str, run_cmd: str, sub_cwd: str) -> str:
+    """OS 별 실행 래퍼. Windows .cmd 는 ASCII 전용·경로는 %~dp0 상대(한글 경로 리터럴 없음)."""
+    tok = run_cmd.split()
+    if resolve.IS_WIN:
+        lines = [
+            "@echo off",
+            f"rem {tech_id} launcher (generated by fm installer v2). ASCII only - do not edit.",
+            "setlocal EnableExtensions",
+            "chcp 65001 >nul 2>&1",
+            'set "JROOT=%FM_JAVIS_ROOT%"',
+            'if not defined JROOT set "JROOT=%LOCALAPPDATA%\\cys"',
+            'set "PATH=%JROOT%;%JROOT%\\runtime\\python;%JROOT%\\runtime\\git\\cmd;%JROOT%\\runtime\\git\\usr\\bin;%JROOT%\\runtime\\node;%PATH%"',
+            'set "PYTHONUTF8=1"',
+            'set "PYTHONDONTWRITEBYTECODE=1"',
+            'cd /d "%~dp0"',
+        ]
+        if runtime == "python":
+            lines.append(f'"%JROOT%\\runtime\\python\\python3.exe" -X utf8 "%~dp0{RUNNER_NAME}"')
+        else:
+            if sub_cwd:
+                lines.append(f'cd /d "%~dp0{sub_cwd}"')
+            if tok and tok[0] in ("npm", "npx"):
+                js = "npm-cli.js" if tok[0] == "npm" else "npx-cli.js"
+                lines.append(f'"%JROOT%\\runtime\\node\\node.exe" "%JROOT%\\runtime\\node\\node_modules\\npm\\bin\\{js}" ' + " ".join(tok[1:]))
+            elif tok and tok[0] == "node":
+                lines.append('"%JROOT%\\runtime\\node\\node.exe" ' + " ".join(tok[1:]))
+            else:
+                lines.append(run_cmd)
+        lines += ["pause", ""]
+        return "\r\n".join(lines)
+    lines = [
+        "#!/bin/bash",
+        f"# {tech_id} 실행 래퍼 (fm 설치기 v2 생성) — 자비스 번들 런타임만 쓴다.",
+        'ROOT="${FM_JAVIS_ROOT:-/Applications/cys.app}"',
+        '[ -x "$ROOT/Contents/MacOS/cys" ] || ROOT="$HOME/Applications/cys.app"',
+        'RT="$ROOT/Contents/Resources/runtime"',
+        'export PATH="$ROOT/Contents/MacOS:$RT/python/bin:$RT/git/bin:$RT/node/bin:/usr/bin:/bin:$PATH"',
+        "export PYTHONUTF8=1 PYTHONDONTWRITEBYTECODE=1",
+        'here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
+        'cd "$here"',
+    ]
+    if runtime == "python":
+        lines.append(f'"$RT/python/bin/python3" -X utf8 "$here/{RUNNER_NAME}"')
+    else:
+        if sub_cwd:
+            lines.append(f'cd "$here/{sub_cwd}"')
+        lines.append(run_cmd)
+    lines += ['read -p "엔터를 누르면 창이 닫힙니다"', ""]
+    return "\n".join(lines)
+
+
+def write_wrappers(ctx: Ctx, tech: Tech, dest: Path) -> str:
+    """기술자 실행 래퍼(+python 실행기) 생성. hosted·run 없음 → 'skipped'."""
+    run_cmd = str((tech.requires or {}).get("run") or "").strip()
+    if tech.delivery == "hosted" or not run_cmd:
+        return "skipped"
+    sub_cwd = str((tech.requires or {}).get("cwd") or "").strip().strip("/\\")
+    changed = False
+    files = [(dest / WRAPPER_NAME, _wrapper_source(tech.id, tech.runtime, run_cmd, sub_cwd))]
+    if tech.runtime == "python":
+        files.append((dest / RUNNER_NAME, _runner_source(run_cmd, sub_cwd)))
+    for path, src in files:
+        data = src.encode("utf-8")
+        if path.exists() and path.read_bytes() == data:
+            continue
+        changed = True
+        ctx.log.act(f"{tech.id}: 실행 래퍼 {path.name} → {path}")
+        if not ctx.dry_run:
+            path.write_bytes(data)
+            if not resolve.IS_WIN:
+                try:
+                    os.chmod(path, 0o755)
+                except OSError:
+                    pass
+    if not changed:
+        ctx.log.same(f"{tech.id}: 실행 래퍼 이미 최신 ({WRAPPER_NAME})")
+    return "done" if changed else "skipped"
+
+
 def step8_deps(ctx: Ctx) -> tuple[str, str]:
     log = ctx.log
-    log.step("8", "의존성 설치 (번들 node/python · 기본 on · --no-deps 로 끔)")
+    log.step("8", f"의존성 설치(격리 · python → {SITE_DIR} · node → node_modules) + 실행 래퍼({WRAPPER_NAME})")
     if ctx.deps is False:
-        log.info("--no-deps — 의존성 설치를 건너뜁니다")
-        return ctx.record("deps", "skipped", "--no-deps")
+        log.info("--no-deps — 의존성 설치는 건너뜁니다(실행 래퍼는 만듭니다)")
     env = resolve.env_for_tools(ctx.root, ctx.home)
     failed = done = 0
     for d, t in ctx.mf.all_techs(ctx.dept):
         if not ctx.selected(t) or t.delivery == "hosted" or not t.installable:
             continue
+        dest = ctx.expand(t.cwd_template)
+        assert dest is not None
+        if not (dest / ".git").exists():
+            log.same(f"{t.id}: 아직 클론 안 됨 — 의존성·래퍼 대상 아님")
+            continue
+        if write_wrappers(ctx, t, dest) == "done":
+            done += 1
         cmd = t.install_cmd
         if not cmd:
             log.same(f"{t.id}: 의존성 선언 없음")
             continue
-        dest = ctx.expand(t.cwd_template)
-        assert dest is not None
-        if not (dest / ".git").exists():
-            log.same(f"{t.id}: 아직 클론 안 됨 — 의존성 대상 아님")
+        if ctx.deps is False:
             continue
-        if re.match(r"^\s*(npm|pnpm|yarn)\b", cmd) and (dest / "node_modules").exists():
+        is_node = bool(re.match(r"^\s*(npm|pnpm|yarn)\b", cmd))
+        if is_node and (dest / "node_modules").exists():
             log.same(f"{t.id}: 이미 설치됨(node_modules)")
             continue
-        argv = resolve_install_argv(ctx, cmd, t.runtime)
+        marker = dest / SITE_DIR / DEPS_MARKER
+        key = "" if is_node else _deps_key(ctx, cmd, dest)
+        if key and marker.exists():
+            try:
+                if json.loads(marker.read_text(encoding="utf-8")).get("key") == key:
+                    log.same(f"{t.id}: 이미 설치됨({SITE_DIR} · 동일 선언)")
+                    continue
+            except Exception:
+                pass
+        argv = resolve_install_argv(ctx, cmd, t.runtime, dest)
         if not argv:
             failed += 1
             log.fail(f"[{t.id}] 설치 명령을 실행할 수 없습니다 — '{cmd}' 의 실행 파일을 번들에서 찾지 못했습니다")
+            continue
+        if argv[-1] == _NOOP:
+            log.warn(f"[{t.id}] '{cmd}' 에서 설치할 의존성을 찾지 못했습니다(pyproject dependencies·requirements.txt 없음) — 건너뜁니다")
+            if not ctx.dry_run:
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text(json.dumps({"key": key, "cmd": cmd, "note": "no-deps-declared"}), encoding="utf-8")
             continue
         if not Path(argv[0]).exists():
             failed += 1
             log.fail(f"[{t.id}] 런타임 '{t.runtime}' 이 자비스 번들에 없습니다: {argv[0]}")
             continue
-        log.act(f"{t.id}: {cmd}   (cwd={dest})")
+        log.act(f"{t.id}: {cmd}  →  {Path(argv[0]).name} {' '.join(argv[1:])}   (cwd={dest})")
         if ctx.dry_run:
             continue
         rc, out, err = run_capture(argv, env, cwd=dest, timeout=1800)
@@ -693,17 +912,38 @@ def step8_deps(ctx: Ctx) -> tuple[str, str]:
             failed += 1
             log.fail(f"[{t.id}] 의존성 설치 실패 exit={rc}: {tail(err or out, 3)}")
             continue
+        if key:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(json.dumps({"key": key, "cmd": cmd, "ts": now_ts()}), encoding="utf-8")
         done += 1
-        log.ok(f"{t.id} 의존성 설치 완료")
+        log.ok(f"{t.id} 의존성 설치 완료 → {(dest / SITE_DIR) if key else (dest / 'node_modules')}")
     if failed:
         return ctx.record("deps", "failed", f"{failed} failed")
     return ctx.record("deps", "done" if done or ctx.dry_run else "skipped", f"{done} installed")
 
 
-# ── 9. 좌석 정합 ─────────────────────────────────────────────────────────────
+# ── 9. 좌석 정합(생성만 · 닫기 금지) ─────────────────────────────────────────
+# ★reap(close-surface) 금지 — 목사님이 직접 연 창을 재설치가 닫는 일이 없어야 한다(코디네이터 결정 2026-09-03).
+#   선언에 있는데 없는 좌석만 만들고, 잉여·중복 좌석은 "그대로 둠"으로 로그에만 남긴다.
+def plan_seats(want: list[str], seats: list[Seat]) -> tuple[list[str], list[Seat], list[Seat]]:
+    """(만들 제목들, 그대로 둘 잉여 좌석, 그대로 둘 중복 좌석) — 순수 함수(테스트용)."""
+    live = [s for s in seats if not s.exited and s.role == "-"]
+    have_titles = [s.title for s in live]
+    creates = [t for t in want if t not in have_titles]
+    extras = [s for s in live if s.title not in want]
+    seen: dict[str, int] = {}
+    dups: list[Seat] = []
+    for s in live:
+        if s.title in want:
+            seen[s.title] = seen.get(s.title, 0) + 1
+            if seen[s.title] > 1:
+                dups.append(s)
+    return creates, extras, dups
+
+
 def step9_seats(ctx: Ctx) -> tuple[str, str]:
     log = ctx.log
-    log.step(9, "기술자 좌석(surface) 정합 — 데몬 ping 후 선언 vs 실좌석 수렴")
+    log.step(9, "기술자 좌석(surface) 정합 — 데몬 ping 후 없는 좌석만 생성(닫기 없음)")
     depts = load_depts(ctx)
     plan: list[dict] = []
     reachable = 0
@@ -717,68 +957,57 @@ def step9_seats(ctx: Ctx) -> tuple[str, str]:
         did, sock = hit[0], str(hit[1]["socket"])
         wait = ctx.ping_wait if not ctx.dry_run else min(ctx.ping_wait, 3.0)
         if not cys_ping(ctx, sock, wait_s=wait):
-            log.warn(f"[{d.key}] 부서 데몬 무응답({int(wait)}초) — 판정 보류(좌석을 지우지 않습니다)")
+            log.warn(f"[{d.key}] 부서 데몬 무응답({int(wait)}초) — 판정 보류")
             continue
         seats = cys_list(ctx, sock)
         if seats is None:
             log.warn(f"[{d.key}] 좌석 목록을 읽지 못해 판정 보류")
             continue
         reachable += 1
-        live = [s for s in seats if not s.exited]
         want = [t.name for t in d.techs]
-        have = [s for s in live if s.role == "-"]
+        creates, extras, dups = plan_seats(want, seats)
+        have = [s for s in seats if not s.exited and s.role == "-"]
         log.info(f"=== {d.display} [{did}] {d.key} ===")
         log.info(f"  목표 기술자 {len(want)}: {', '.join(want)}")
         log.info(f"  현재 기술자 {len(have)}: {', '.join(f'{s.title}#{s.id}' for s in have) or '-'}")
-        for t in d.techs:
-            if not any(s.title == t.name for s in have):
-                cwd = ctx.expand(t.cwd_template)
-                plan.append({"dept": d.key, "sock": sock, "act": "create", "title": t.name,
-                             "cwd": str(cwd) if cwd and cwd.exists() else str(ctx.home), "why": "선언에 있으나 좌석 없음"})
-        by_title: dict[str, list[Seat]] = {}
-        for s in have:
-            by_title.setdefault(s.title, []).append(s)
-        for title, group in by_title.items():
-            if title not in want:
-                for s in group:
-                    plan.append({"dept": d.key, "sock": sock, "act": "reap", "title": title, "id": s.id, "why": "선언에 없는 좌석"})
-            elif len(group) > 1:
-                for dup in sorted(group, key=lambda s: s.id)[:-1]:  # 가장 최근(높은 id) 하나만 남긴다
-                    plan.append({"dept": d.key, "sock": sock, "act": "reap", "title": title, "id": dup.id,
-                                 "why": f"중복 {len(group)}좌석 중 구본"})
-        roles = [s for s in live if s.role != "-"]
+        for title in creates:
+            t = next(x for x in d.techs if x.name == title)
+            cwd = ctx.expand(t.cwd_template)
+            if t.installable and not (cwd and cwd.exists()):
+                # 클론이 안 된 기술자의 좌석은 보류 — 없는 폴더로 좌석을 만들지 않는다(클론 성공 후 재실행 시 생성)
+                log.info(f"  · '{title}' 좌석 보류 — 작업 폴더가 아직 없습니다({cwd}). 클론 후 재실행하면 만듭니다")
+                continue
+            plan.append({"dept": d.key, "sock": sock, "title": title,
+                         "cwd": str(cwd) if cwd and cwd.exists() else str(ctx.home)})
+        for s in extras:
+            log.info(f"  · 선언에 없는 좌석 '{s.title}'#{s.id} — 그대로 둠(닫지 않습니다)")
+        for s in dups:
+            log.info(f"  · 중복 좌석 '{s.title}'#{s.id} — 그대로 둠(닫지 않습니다)")
+        roles = [s for s in seats if not s.exited and s.role != "-"]
         if roles:
-            log.info(f"  역할 좌석 {len(roles)}개는 건드리지 않습니다")
+            log.info(f"  · 역할 좌석 {len(roles)}개 — 그대로 둠")
     if not plan:
-        log.same("수렴 완료 — 편차 없음" if reachable else "판정 가능한 부서 없음")
-        return ctx.record("seats", "skipped" if reachable else "skipped", "no-diff" if reachable else "unreachable")
-    log.info("-- 좌석 계획 --")
+        log.same("수렴 완료 — 만들 좌석 없음" if reachable else "판정 가능한 부서 없음")
+        return ctx.record("seats", "skipped", "no-diff" if reachable else "unreachable")
+    log.info("-- 좌석 계획(생성만) --")
     for p in plan:
-        log.act(f"[{p['dept']}] {p['act']} '{p['title']}'{('#' + str(p['id'])) if p.get('id') else ''} — {p['why']}")
+        log.act(f"[{p['dept']}] create '{p['title']}' (cwd={p['cwd']})")
     if ctx.dry_run:
         return ctx.record("seats", "done", f"planned {len(plan)}")
     cys = str(ctx.lay["cys"])
     failed = 0
     for p in plan:
         env = cys_env(ctx, p["sock"])
-        if p["act"] == "create":
-            rc, out, err = run_capture([cys, "new-surface", "--socket", p["sock"], "--title", p["title"], "--cwd", p["cwd"]], env, timeout=60)
-            if rc != 0:
-                failed += 1
-                log.fail(f"[{p['dept']}] 좌석 생성 실패 '{p['title']}' exit={rc}: {tail(err or out, 2)}")
-            else:
-                log.ok(f"[{p['dept']}] '{p['title']}' → {out.strip()}")
+        rc, out, err = run_capture([cys, "new-surface", "--socket", p["sock"], "--title", p["title"], "--cwd", p["cwd"]], env, timeout=60)
+        if rc != 0:
+            failed += 1
+            log.fail(f"[{p['dept']}] 좌석 생성 실패 '{p['title']}' exit={rc}: {tail(err or out, 2)}")
         else:
-            rc, out, err = run_capture([cys, "close-surface", "--socket", p["sock"], "--reap", str(p["id"])], env, timeout=60)
-            if rc != 0:
-                failed += 1
-                log.fail(f"[{p['dept']}] 좌석 제거 실패 '{p['title']}'#{p['id']} exit={rc}: {tail(err or out, 2)}")
-            else:
-                log.ok(f"[{p['dept']}] '{p['title']}'#{p['id']} 제거")
+            log.ok(f"[{p['dept']}] '{p['title']}' → {out.strip()}")
         time.sleep(ctx.pause)
     if failed:
         return ctx.record("seats", "failed", f"{failed} failed")
-    return ctx.record("seats", "done", f"{len(plan)} applied")
+    return ctx.record("seats", "done", f"{len(plan)} created")
 
 
 # ── 10. 수신부 ───────────────────────────────────────────────────────────────

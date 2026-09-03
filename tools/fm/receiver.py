@@ -29,13 +29,20 @@ MAC_BUNDLE_ID = "fm.cys-install.receiver"
 LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 PLISTBUDDY = "/usr/libexec/PlistBuddy"
 
-APPLESCRIPT = '''-- 자비스 설치 수신부 (fm 설치기 v2 가 생성) — cys-install:// 를 받아 install.sh handle 로 넘긴다.
+APPLESCRIPT = '''-- 자비스 설치 수신부 (fm 설치기 v2 가 생성) — cys-install:// 를 받아 Terminal 에서 install.sh handle 을 연다.
+-- 설치 진행이 보이도록: 임시 .command 파일을 ~/.cys/fm-install/ 아래에 쓰고 `open -a Terminal` 로 연다
+-- (Automation 권한 프롬프트 없음 · 로컬 생성 파일이라 격리 없음). 끝나면 fm.cli 가 display notification 을 띄운다.
 on open location theURL
 \tset sh to "{sh}"
+\tset workDir to "{workdir}"
 \ttry
-\t\tdo shell script "/bin/bash " & quoted form of sh & " handle " & quoted form of theURL
+\t\tset stamp to do shell script "date +%Y%m%d-%H%M%S-$$"
+\t\tset cmdFile to workDir & "/handle-" & stamp & ".command"
+\t\tset body to "#!/bin/bash" & linefeed & "\\"/bin/bash\\" " & quoted form of sh & " handle " & quoted form of theURL & linefeed & "read -p \\"엔터를 누르면 창이 닫힙니다\\"" & linefeed
+\t\tdo shell script "mkdir -p " & quoted form of workDir & " && printf '%s' " & quoted form of body & " > " & quoted form of cmdFile & " && chmod +x " & quoted form of cmdFile
+\t\tdo shell script "open -a Terminal " & quoted form of cmdFile
 \ton error errMsg number errNum
-\t\tdisplay notification "설치 중 문제가 생겼습니다 — 로그 폴더를 엽니다." with title "자비스 설치"
+\t\tdisplay notification "설치 창을 열지 못했습니다 — 로그 폴더를 엽니다." with title "자비스 설치"
 \t\ttry
 \t\t\tdo shell script "/usr/bin/open " & quoted form of "{logs}"
 \t\tend try
@@ -193,8 +200,9 @@ def _as_str(s: str) -> str:
 
 
 def mac_script(ctx: Ctx) -> str:
-    logs = ctx.home / ".cys" / "fm-install" / "logs"
-    return APPLESCRIPT.format(sh=_as_str(str(sh_path(ctx))), logs=_as_str(str(logs)))
+    work = ctx.home / ".cys" / "fm-install"
+    return APPLESCRIPT.format(sh=_as_str(str(sh_path(ctx))), workdir=_as_str(str(work)),
+                              logs=_as_str(str(work / "logs")))
 
 
 def _mac_marker(app: Path) -> Path:
