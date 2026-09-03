@@ -75,17 +75,28 @@ jobs:
           set -euxo pipefail
           curl -fL -o /tmp/cys.dmg "https://github.com/idoforgod/cys-terminal/releases/download/v0.14.29/${{ matrix.asset }}"
           MNT=$(hdiutil attach /tmp/cys.dmg -nobrowse -readonly | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1)
-          ls -la "$MNT"
-          APP=$(find "$MNT" -maxdepth 2 -name "*.app" | head -1)
-          echo "APP=$APP"
-          cp -R "$APP" /Applications/
+          ls -la "$MNT"; ls -la "$MNT/.support" 2>/dev/null || true
+          # DMG 는 드래그형이 아니다: 'Install cys.app'(도우미)가 숨은 .support/cys.app 을 /Applications 에 넣는다.
+          # 헤드리스에서는 도우미(GUI 다이얼로그) 대신 실제 번들(Contents/MacOS/cys 보유)을 직접 복사한다.
+          APP=""
+          for c in "$MNT/.support/cys.app" $(find "$MNT" -maxdepth 3 -type d -name "*.app" 2>/dev/null); do
+            if [ -x "$c/Contents/MacOS/cys" ]; then APP="$c"; break; fi
+          done
+          echo "APP=$APP"; [ -n "$APP" ] || { echo "cys.app(Contents/MacOS/cys) 를 DMG 에서 찾지 못함" >&2; exit 1; }
+          ditto "$APP" /Applications/cys.app
           hdiutil detach "$MNT" || true
       - name: 번들 배치·런타임 실행 확인
         shell: bash
         run: |
           set -euxo pipefail
-          B=$(ls -d /Applications/*.app | grep -i cys | head -1)
-          echo "BUNDLE=$B"
+          B=/Applications/cys.app
+          echo "BUNDLE=$B"; [ -x "$B/Contents/MacOS/cys" ]
+          xattr -l "$B" | head -3 || true
+          # 순정 맥 가정 검증: /usr/local/bin 에 cys 심볼릭이 없어야 한다(「셸에 cys 설치」 미클릭 상태)
+          ls -la /usr/local/bin/cys 2>/dev/null && echo "NOTE: /usr/local/bin/cys exists on runner" || echo "OK: no /usr/local/bin/cys (pristine)"
+          # pack 확보 경로: GUI 없이 cys init-pack → ~/.cys/pack/bin/cys-dept
+          "$B/Contents/MacOS/cys" init-pack 2>&1 | tail -3 || true
+          ls -la "$HOME/.cys/pack/bin/cys-dept" && head -1 "$HOME/.cys/pack/bin/cys-dept"
           ls -la "$B/Contents/MacOS" "$B/Contents/Resources" | head -40
           find "$B/Contents/Resources/runtime" -maxdepth 3 \( -name python3 -o -name git -o -name node -o -name bash -o -name uv \) -type f 2>/dev/null | head -20
           codesign -dv "$B" 2>&1 | head -5 || true
