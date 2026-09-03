@@ -1,0 +1,99 @@
+name: mac-probe
+# 맥 원클릭 설치 기술 검증(설치 100% 전략 · 2026-09-03) — 실제 macOS 러너에서
+#  ① 로컬 생성 URL 수신부 앱(osacompile)이 cys-install:// 스킴을 받는가
+#  ② upstream DMG 의 cys.app 번들 배치(cys·cysd·runtime python/git/node)가 가정과 같은가
+# 이 워크플로는 검증 전용이며 유저 배달 경로(main)와 무관하다.
+on:
+  push:
+    branches: [fix/install-100]
+    paths: [".github/workflows/mac-probe.yml"]
+  workflow_dispatch:
+
+jobs:
+  url-handler:
+    name: "① 로컬 URL 수신부 앱 (osacompile · 서명 없음)"
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - name: 수신부 앱 생성 + 스킴 등록
+        shell: bash
+        run: |
+          set -euxo pipefail
+          APP="$HOME/Applications/FM-Install-Receiver.app"
+          mkdir -p "$HOME/Applications"
+          cat > /tmp/handler.applescript <<'EOF'
+          on open location theURL
+            set homeDir to POSIX path of (path to home folder)
+            do shell script "mkdir -p " & quoted form of (homeDir & ".fm-probe") & " && printf '%s\\n' " & quoted form of theURL & " >> " & quoted form of (homeDir & ".fm-probe/received.txt")
+          end open location
+          on run
+            -- URL 없이 열리면 아무것도 하지 않는다
+          end run
+          EOF
+          osacompile -o "$APP" /tmp/handler.applescript
+          PL="$APP/Contents/Info.plist"
+          PB=/usr/libexec/PlistBuddy
+          $PB -c "Set :CFBundleIdentifier fm.cys-install.receiver" "$PL" || $PB -c "Add :CFBundleIdentifier string fm.cys-install.receiver" "$PL"
+          $PB -c "Add :CFBundleURLTypes array" "$PL"
+          $PB -c "Add :CFBundleURLTypes:0 dict" "$PL"
+          $PB -c "Add :CFBundleURLTypes:0:CFBundleURLName string fm.cys-install" "$PL"
+          $PB -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$PL"
+          $PB -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string cys-install" "$PL"
+          LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+          "$LSREG" -f "$APP"
+          xattr -l "$APP" || true
+          "$LSREG" -dump 2>/dev/null | grep -i -B2 -A6 "cys-install" | head -40 || true
+      - name: URL 발화 → 수신 확인
+        shell: bash
+        run: |
+          set -euxo pipefail
+          open "cys-install://dept/future-ministry"
+          for i in $(seq 1 30); do [ -f "$HOME/.fm-probe/received.txt" ] && break; sleep 1; done
+          echo "--- received ---"; cat "$HOME/.fm-probe/received.txt"
+          grep -q "cys-install://dept/future-ministry" "$HOME/.fm-probe/received.txt"
+          open "cys-install://tech/frar"
+          sleep 3
+          grep -q "cys-install://tech/frar" "$HOME/.fm-probe/received.txt"
+          echo "RESULT: url-handler OK ($(sw_vers -productVersion) $(uname -m))"
+
+  bundle-layout:
+    name: "② upstream DMG 번들 배치 검증"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest   # Apple Silicon
+            asset: cys_0.14.29_aarch64.dmg
+          - runner: macos-13       # Intel
+            asset: cys_0.14.29_x64.dmg
+    steps:
+      - name: DMG 내려받기·마운트·복사
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fL -o /tmp/cys.dmg "https://github.com/idoforgod/cys-terminal/releases/download/v0.14.29/${{ matrix.asset }}"
+          MNT=$(hdiutil attach /tmp/cys.dmg -nobrowse -readonly | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1)
+          ls -la "$MNT"
+          APP=$(find "$MNT" -maxdepth 2 -name "*.app" | head -1)
+          echo "APP=$APP"
+          cp -R "$APP" /Applications/
+          hdiutil detach "$MNT" || true
+      - name: 번들 배치·런타임 실행 확인
+        shell: bash
+        run: |
+          set -euxo pipefail
+          B=$(ls -d /Applications/*.app | grep -i cys | head -1)
+          echo "BUNDLE=$B"
+          ls -la "$B/Contents/MacOS" "$B/Contents/Resources" | head -40
+          find "$B/Contents/Resources/runtime" -maxdepth 3 \( -name python3 -o -name git -o -name node -o -name bash -o -name uv \) -type f 2>/dev/null | head -20
+          codesign -dv "$B" 2>&1 | head -5 || true
+          spctl -a -vv "$B" 2>&1 | head -3 || true
+          "$B/Contents/MacOS/cys" --version
+          "$B/Contents/MacOS/cysd" --version 2>&1 | head -1 || true
+          PY=$(find "$B/Contents/Resources/runtime" -path "*python*/bin/python3" -type f | head -1); "$PY" --version
+          GIT=$(find "$B/Contents/Resources/runtime" -path "*git*/bin/git" -type f | head -1); "$GIT" --version
+          NODE=$(find "$B/Contents/Resources/runtime" -path "*node*/bin/node" -type f | head -1); "$NODE" --version
+          echo "BASH=$(bash --version | head -1)"
+          echo "RESULT: bundle-layout OK ($(sw_vers -productVersion) $(uname -m))"
